@@ -10,6 +10,7 @@ local HorizontalSpan = require("ui/widget/horizontalspan")
 local ImageWidget = require("ui/widget/imagewidget")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local Menu = require("ui/widget/menu")
+local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
@@ -265,32 +266,63 @@ function OPDSGridCell:init()
         cell_bordersize = border_size
     end
 
-    local inner_width = self.cell_width - (GRID_CONFIG.cell_padding * 2) - (cell_bordersize * 2)
-    local inner_height = self.cell_height - (GRID_CONFIG.cell_padding * 2) - (cell_bordersize * 2)
+    -- Eats into the cell rather than adding to it, so the grid keeps its rows per page.
+    local underline_size = math.min(Size.line.focus_indicator, GRID_CONFIG.cell_padding)
+    local underline_gap = math.min(Size.padding.tiny, GRID_CONFIG.cell_padding - underline_size)
+    local frame_height = self.cell_height - underline_size - underline_gap
 
-    self[1] = FrameContainer:new {
-        width = self.cell_width,
-        height = self.cell_height,
-        padding = GRID_CONFIG.cell_padding,
-        margin = 0,
-        bordersize = cell_bordersize,
-        color = border_color,
-        background = Blitbuffer.COLOR_WHITE,
-        CenterContainer:new {
-            dimen = Geom:new {
-                w = inner_width,
-                h = inner_height,
-            },
-            VerticalGroup:new {
-                align = "center",
-                cover_widget,
-                VerticalSpan:new { width = cover_text_gap },
-                text_container,
+    local inner_width = self.cell_width - (GRID_CONFIG.cell_padding * 2) - (cell_bordersize * 2)
+    local inner_height = frame_height - (GRID_CONFIG.cell_padding * 2) - (cell_bordersize * 2)
+
+    self._underline = LineWidget:new {
+        dimen = Geom:new { w = self.cell_width, h = underline_size },
+        background = self._is_focused and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_WHITE,
+    }
+
+    self[1] = VerticalGroup:new {
+        align = "left",
+        FrameContainer:new {
+            width = self.cell_width,
+            height = frame_height,
+            padding = GRID_CONFIG.cell_padding,
+            margin = 0,
+            bordersize = cell_bordersize,
+            color = border_color,
+            background = Blitbuffer.COLOR_WHITE,
+            CenterContainer:new {
+                dimen = Geom:new {
+                    w = inner_width,
+                    h = inner_height,
+                },
+                VerticalGroup:new {
+                    align = "center",
+                    cover_widget,
+                    VerticalSpan:new { width = cover_text_gap },
+                    text_container,
+                },
             },
         },
+        VerticalSpan:new { width = underline_gap },
+        self._underline,
     }
 
     self.cover_widget = cover_widget
+end
+
+-- The cell is rebuilt when its cover arrives, hence the flag init() restores the line from.
+function OPDSGridCell:onFocus()
+    self._is_focused = true
+    self._underline.background = Blitbuffer.COLOR_BLACK
+    if self.menu then
+        CoverLoader.defer(self.menu)
+    end
+    return true
+end
+
+function OPDSGridCell:onUnfocus()
+    self._is_focused = false
+    self._underline.background = Blitbuffer.COLOR_WHITE
+    return true
 end
 
 function OPDSGridCell:update()
@@ -568,6 +600,7 @@ function OPDSGridMenu:updateItems(select_number)
         -- Create complete grid with hash borders
         for row = 1, rows_per_page do
             local row_group = HorizontalGroup:new { align = "top" }
+            local row_cells = {}
 
             if centering_offset > 0 then
                 table.insert(row_group, HorizontalSpan:new { width = centering_offset })
@@ -591,6 +624,7 @@ function OPDSGridMenu:updateItems(select_number)
                     }
 
                     table.insert(row_group, cell)
+                    table.insert(row_cells, cell)
 
                     if entry.cover_url and entry.lazy_load_cover and not entry.cover_bb then
                         table.insert(self._items_to_update, { entry = entry, widget = cell })
@@ -634,7 +668,9 @@ function OPDSGridMenu:updateItems(select_number)
             end
 
             table.insert(self.item_group, row_group)
-            table.insert(self.layout, { row_group })
+            if #row_cells > 0 then
+                table.insert(self.layout, row_cells)
+            end
 
             -- Add horizontal line between rows (but not after last)
             if row < rows_per_page then
@@ -665,6 +701,7 @@ function OPDSGridMenu:updateItems(select_number)
         -- Standard grid (none or individual borders)
         for row = 1, rows_per_page do
             local row_group = HorizontalGroup:new { align = "top" }
+            local row_cells = {}
 
             if centering_offset > 0 then
                 table.insert(row_group, HorizontalSpan:new { width = centering_offset })
@@ -688,6 +725,7 @@ function OPDSGridMenu:updateItems(select_number)
                     }
 
                     table.insert(row_group, cell)
+                    table.insert(row_cells, cell)
 
                     if entry.cover_url and entry.lazy_load_cover and not entry.cover_bb then
                         table.insert(self._items_to_update, { entry = entry, widget = cell })
@@ -706,7 +744,9 @@ function OPDSGridMenu:updateItems(select_number)
             end
 
             table.insert(self.item_group, row_group)
-            table.insert(self.layout, { row_group })
+            if #row_cells > 0 then
+                table.insert(self.layout, row_cells)
+            end
 
             if row < rows_per_page then
                 table.insert(self.item_group, VerticalSpan:new { width = GRID_CONFIG.row_spacing })
