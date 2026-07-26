@@ -1,6 +1,7 @@
 local BD = require("ui/bidi")
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
+local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
 local Menu = require("ui/widget/menu")
 local NetworkMgr = require("ui/network/manager")
@@ -79,6 +80,19 @@ function OPDSBrowser:init()
     self.title_bar_right_icon = nil
     self.facet_groups = nil
     OPDSCoverMenu.init(self)
+
+    -- Menu maps the back key to Close; walk up the catalog instead, and leave Home to close.
+    if Device:hasKeys() then
+        self.key_events.Back = { { Device.input.group.Back } }
+        self.key_events.Close = { { "Home" } }
+    end
+end
+
+function OPDSBrowser:onBack()
+    if self.paths and #self.paths > 0 then
+        return self:onReturn()
+    end
+    return self:onClose()
 end
 
 function OPDSBrowser:_debugLog(...)
