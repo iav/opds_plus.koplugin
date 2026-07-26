@@ -119,18 +119,29 @@ function OPDSBrowser:toggleViewMode()
         timeout = 1,
     })
 
-    -- Refresh the current view WITHOUT breaking navigation or auth context
-    if #self.paths > 0 then
-        -- We're in a catalog - get current URL
-        local current_path = self.paths[#self.paths]
-        local current_url = current_path.url
+    -- The views hold a different number of items per page, so remember the item, not the page.
+    local itemnumber = self:getFocusedItemNumber()
 
-        -- Reload the catalog with same URL
-        self:updateCatalog(current_url, true)
-    else
-        -- We're at root level - just switch the display mode
-        self:switchItemTable(self.catalog_title, self.item_table, -1)
+    self:switchItemTable(self.catalog_title, self.item_table, itemnumber)
+
+    -- switchItemTable paged with the old view's perpage and focused the first item.
+    local page = self:getPageNumber(itemnumber)
+    local select_number = itemnumber - ((page - 1) * self.perpage)
+    if page ~= self.page or select_number ~= 1 then
+        self.page = page
+        self:updateItems(select_number)
     end
+end
+
+--- Number of the focused item within the whole catalog, 1 if nothing is focused.
+function OPDSBrowser:getFocusedItemNumber()
+    local selected = self.selected
+    if not selected or not self.perpage then
+        return 1
+    end
+    local columns = (self.layout and self.layout[1]) and #self.layout[1] or 1
+    local in_page = ((selected.y - 1) * columns) + selected.x
+    return ((self.page - 1) * self.perpage) + in_page
 end
 
 function OPDSBrowser:showOPDSMenu()
