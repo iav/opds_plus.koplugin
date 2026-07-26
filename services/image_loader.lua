@@ -53,10 +53,9 @@ function Batch:loadImages(urls)
                 end
 
                 if #pending_urls > 0 then
-                    UIManager:scheduleIn(Constants.UI_TIMING.IMAGE_BATCH_DELAY, run_image)
-                else
-                    self.loading = false
+                    return run_image()
                 end
+                self.loading = false
                 return
             end
 
@@ -91,7 +90,7 @@ function Batch:loadImages(urls)
             end
         else
             Debug.error("ImageLoader:", "Failed to download cover:", content or "unknown error")
-            if stale_content and self.callback then
+            if self.callback then
                 self.callback(url, stale_content)
             end
         end

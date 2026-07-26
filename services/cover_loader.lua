@@ -50,24 +50,27 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 
 			entry.lazy_load_cover = false
 
-			-- Render the cover image maintaining aspect ratio
-			local ok, cover_bb = pcall(function()
-				return RenderImage:renderImageData(
-					content,
-					#content,
-					false,
-					cover_width,
-					cover_height
-				)
-			end)
-
-			if ok and cover_bb then
-				entry.cover_bb = cover_bb
-				entry.cover_failed = false
-			else
-				Debug.error("CoverLoader:", "Failed to render cover:", tostring(cover_bb))
-				entry.cover_failed = true
+			-- No content means the download failed; mark it either way, or it is queued again.
+			local cover_bb
+			if content then
+				local ok, rendered = pcall(function()
+					return RenderImage:renderImageData(
+						content,
+						#content,
+						false,
+						cover_width,
+						cover_height
+					)
+				end)
+				if ok then
+					cover_bb = rendered
+				else
+					Debug.error("CoverLoader:", "Failed to render cover:", tostring(rendered))
+				end
 			end
+
+			entry.cover_bb = cover_bb
+			entry.cover_failed = cover_bb == nil
 
 			-- Update the widget to show the new cover (or error state)
 			widget.entry = entry
@@ -174,6 +177,34 @@ end
 -- @return boolean True if there are pending items
 function CoverLoader.hasPendingItems(menu)
 	return menu._items_to_update and #menu._items_to_update > 0
+end
+
+--- Stop loading covers and try again once the user has stopped navigating.
+-- Fetching a cover blocks the UI thread for as long as the server takes, so a batch left running
+-- makes every keypress wait for it.
+-- @param menu table Menu instance
+-- @param delay number|nil Seconds of quiet before loading resumes (default 1)
+function CoverLoader.defer(menu, delay)
+	local UIManager = require("ui/uimanager")
+
+	if menu.halt_image_loading then
+		menu.halt_image_loading()
+		menu.halt_image_loading = nil
+	end
+	if not menu._scheduled_cover_load then
+		return
+	end
+	UIManager:unschedule(menu._scheduled_cover_load)
+
+	menu._items_to_update = {}
+	for _, item in ipairs(menu._cover_queue or {}) do
+		if item.entry and not item.entry.cover_bb and not item.entry.cover_failed then
+			table.insert(menu._items_to_update, item)
+		end
+	end
+	if #menu._items_to_update > 0 then
+		UIManager:scheduleIn(delay or 1, menu._scheduled_cover_load)
+	end
 end
 
 return CoverLoader

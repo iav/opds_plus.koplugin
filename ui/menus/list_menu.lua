@@ -297,6 +297,9 @@ end
 function OPDSListMenuItem:onFocus()
     self._is_focused = true
     self._underline.background = Blitbuffer.COLOR_BLACK
+    if self.menu then
+        CoverLoader.defer(self.menu)
+    end
     return true
 end
 
@@ -553,6 +556,8 @@ function OPDSListMenu:updateItems(select_number)
     -- Schedule cover loading
     if #self._items_to_update > 0 then
         self:_debugLog("Scheduling cover loading for", #self._items_to_update, "items")
+
+        self._cover_queue = self._items_to_update
 
         -- Store the scheduled function so it can be cancelled if needed
         self._scheduled_cover_load = function()
