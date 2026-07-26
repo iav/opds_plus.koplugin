@@ -14,6 +14,7 @@ local T = ffiUtil.template
 
 -- Import the custom cover menu for displaying book covers
 local OPDSCoverMenu = require("ui.menus.cover_menu")
+local CoverLoader = require("services.cover_loader")
 
 -- Import constants and utilities
 local Constants = require("models.constants")
@@ -89,6 +90,7 @@ function OPDSBrowser:init()
 end
 
 function OPDSBrowser:onBack()
+    CoverLoader.defer(self)
     if self.paths and #self.paths > 0 then
         return self:onReturn()
     end
@@ -132,6 +134,15 @@ function OPDSBrowser:toggleViewMode()
         self:updateItems(select_number)
     end
 end
+
+-- Covers are fetched on the UI thread, so a page of them holds every keypress that
+-- follows. Any key means the user is still navigating: let the covers wait for a pause.
+function OPDSBrowser:onKeyPress(key)
+    CoverLoader.defer(self)
+    return Menu.onKeyPress(self, key)
+end
+
+OPDSBrowser.onKeyRepeat = OPDSBrowser.onKeyPress
 
 --- Number of the focused item within the whole catalog, 1 if nothing is focused.
 function OPDSBrowser:getFocusedItemNumber()
