@@ -116,6 +116,7 @@ function OPDSGridCell:init()
             width = self.cover_width,
             height = self.cover_height,
             alpha = true,
+            image_disposable = false, -- the entry owns it, CoverLoader.cleanup frees it
         }
     elseif self.entry.cover_url and self.entry.lazy_load_cover then
         inner_cover_widget = UIUtils.createPlaceholderCover(self.cover_width, self.cover_height, "loading")
@@ -611,6 +612,8 @@ function OPDSGridMenu:updateItems(select_number)
                 local entry = self.item_table[entry_idx]
 
                 if entry then
+                    CoverLoader.useCoverForSize(entry, self.cover_width, self.cover_height)
+
                     local cell = OPDSGridCell:new {
                         entry = entry,
                         cell_width = self.cell_width,
@@ -712,6 +715,8 @@ function OPDSGridMenu:updateItems(select_number)
                 local entry = self.item_table[entry_idx]
 
                 if entry then
+                    CoverLoader.useCoverForSize(entry, self.cover_width, self.cover_height)
+
                     local cell = OPDSGridCell:new {
                         entry = entry,
                         cell_width = self.cell_width,

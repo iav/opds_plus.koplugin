@@ -9,6 +9,10 @@ local Debug = require("utils.debug")
 
 local CoverLoader = {}
 
+local function sizeKey(cover_width, cover_height)
+	return cover_width .. "x" .. cover_height
+end
+
 --- Extract unique URLs from items pending cover load
 -- @param items_to_update table Array of {entry, widget} items
 -- @return table urls Array of unique URLs
@@ -71,11 +75,42 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 
 			entry.cover_bb = cover_bb
 			entry.cover_failed = cover_bb == nil
+			entry.cover_bb_key = cover_bb and sizeKey(cover_width, cover_height) or nil
+			if cover_bb then
+				entry.cover_bbs = entry.cover_bbs or {}
+				entry.cover_bbs[entry.cover_bb_key] = cover_bb
+			end
 
 			-- Update the widget to show the new cover (or error state)
 			widget.entry = entry
 			widget:update()
 		end
+	end
+end
+
+--- Point the entry at its cover for this view's size, keeping the other view's rendering.
+-- Re-rendering costs a decode, or a download once the cached image has expired.
+-- @param entry table Catalog entry
+-- @param cover_width number Cover width this view draws with
+-- @param cover_height number Cover height this view draws with
+function CoverLoader.useCoverForSize(entry, cover_width, cover_height)
+	local key = sizeKey(cover_width, cover_height)
+	if entry.cover_bb_key == key then
+		return
+	end
+
+	if entry.cover_bb and entry.cover_bb_key then
+		entry.cover_bbs = entry.cover_bbs or {}
+		entry.cover_bbs[entry.cover_bb_key] = entry.cover_bb
+	end
+
+	local kept = entry.cover_bbs and entry.cover_bbs[key]
+	entry.cover_bb = kept
+	entry.cover_bb_key = kept and key or nil
+	if not kept then
+		-- A cover that failed to download or decode fails at any size, and a failed entry never
+		-- matches the size key above, so clearing the flag here would re-fetch it on every page.
+		entry.lazy_load_cover = not entry.cover_failed
 	end
 end
 
@@ -142,13 +177,15 @@ function CoverLoader.cleanup(menu)
 		menu.halt_image_loading = nil
 	end
 
-	-- Free cover image blitbuffers
+	-- Free cover image blitbuffers, every size the entry was drawn at
 	if menu.item_table then
 		for _, entry in ipairs(menu.item_table) do
-			if entry.cover_bb then
-				entry.cover_bb:free()
-				entry.cover_bb = nil
+			for _, cover_bb in pairs(entry.cover_bbs or {}) do
+				cover_bb:free()
 			end
+			entry.cover_bbs = nil
+			entry.cover_bb = nil
+			entry.cover_bb_key = nil
 		end
 	end
 end
