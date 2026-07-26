@@ -723,30 +723,8 @@ function OPDSGridMenu:updateItems(select_number)
         return "ui", refresh_dimen
     end)
 
-    -- Custom page info
-    if self.page_info then
-        local custom_text = "▦ " .. self.page .. "/" .. self.page_num .. " (" .. self.perpage .. " items)"
-
-        for i = 1, 10 do
-            if self.page_info[i] and type(self.page_info[i]) == "table" and self.page_info[i].text then
-                local old_widget = self.page_info[i]
-                local face = old_widget.face or Font:getFace("smallinfofont")
-                local fgcolor = old_widget.fgcolor or Blitbuffer.COLOR_BLACK
-
-                if old_widget.free then
-                    old_widget:free()
-                end
-
-                self.page_info[i] = TextWidget:new {
-                    text = custom_text,
-                    face = face,
-                    fgcolor = fgcolor,
-                }
-
-                UIManager:setDirty(self.show_parent, "ui")
-                break
-            end
-        end
+    if self.page_info_text then
+        self.page_info_text:setText(OPDSGridMenu.getPageInfo(self))
     end
 
     -- Schedule cover loading
