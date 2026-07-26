@@ -1,28 +1,11 @@
 local DataStorage = require("datastorage")
 local lfs = require("libs/libkoreader-lfs")
 local bit = require("bit")
+local util = require("util")
 
 local CoverCache = {}
 
 local CACHE_DIR = DataStorage:getDataDir() .. "/cache/opds_plus/covers"
-
-local function ensureDir(path)
-	if lfs.attributes(path, "mode") == "directory" then
-		return true
-	end
-
-	local current = ""
-	for part in path:gmatch("[^/]+") do
-		current = current == "" and ("/" .. part) or (current .. "/" .. part)
-		if lfs.attributes(current, "mode") ~= "directory" then
-			local ok = lfs.mkdir(current)
-			if not ok then
-				return false
-			end
-		end
-	end
-	return true
-end
 
 local function hashUrl(url)
 	local h1 = 5381
@@ -137,7 +120,7 @@ function CoverCache.put(url, content, max_bytes)
 		return false
 	end
 
-	if not ensureDir(CACHE_DIR) then
+	if not util.makePath(CACHE_DIR) then
 		return false
 	end
 
