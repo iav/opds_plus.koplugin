@@ -144,6 +144,14 @@ end
 
 OPDSBrowser.onKeyRepeat = OPDSBrowser.onKeyPress
 
+-- Nothing else frees the covers of the catalog being left: the widgets do not own them.
+function OPDSBrowser:switchItemTable(new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
+    if new_item_table and new_item_table ~= self.item_table then
+        CoverLoader.freeCovers(self.item_table)
+    end
+    return OPDSCoverMenu.switchItemTable(self, new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
+end
+
 --- Number of the focused item within the whole catalog, 1 if nothing is focused.
 function OPDSBrowser:getFocusedItemNumber()
     local selected = self.selected
@@ -404,15 +412,22 @@ function OPDSBrowser:onReturn()
         self:updateCatalog(path.url, true)
     else
         -- return to root path, we simply reinit opdsbrowser
-        self:init()
+        self:returnToRoot()
     end
     return true
 end
 
 -- Menu action on return-arrow long-press (return to root path)
 function OPDSBrowser:onHoldReturn()
-    self:init()
+    self:returnToRoot()
     return true
+end
+
+-- init() rebuilds the browser without going through switchItemTable, so the covers of the
+-- catalog being left would stay allocated in CoverLoader.
+function OPDSBrowser:returnToRoot()
+    CoverLoader.freeCovers(self.item_table)
+    self:init()
 end
 
 -- Menu action on next-page chevron tap (request and show more catalog entries)

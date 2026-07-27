@@ -9,8 +9,78 @@ local Debug = require("utils.debug")
 
 local CoverLoader = {}
 
+-- A rendered cover is held by its entry until the catalog is left, so a long browse would
+-- otherwise keep every page ever drawn. The device has no swap and little to spare; dropping
+-- the oldest costs a re-render from the on-disk cache when the reader comes back.
+-- Keep well over two full pages in both views: a cover still on screen is referenced by its
+-- widget, and freeing it would leave that widget painting freed memory.
+local MAX_RENDERED_COVERS = 40
+local rendered = {} -- oldest first, {entry, key}
+
 local function sizeKey(cover_width, cover_height)
 	return cover_width .. "x" .. cover_height
+end
+
+local function freeRendering(entry, key)
+	local cover_bb = entry.cover_bbs and entry.cover_bbs[key]
+	if cover_bb then
+		cover_bb:free()
+		entry.cover_bbs[key] = nil
+	end
+	if entry.cover_bb_key == key then
+		entry.cover_bb = nil
+		entry.cover_bb_key = nil
+		entry.lazy_load_cover = true
+	end
+end
+
+-- Move a rendering to the young end, so that what the page shows is never the first to go:
+-- a cover taken from cover_bbs is drawn without being rendered again, and would otherwise keep
+-- ageing while on screen until it is freed under the widget still painting it.
+local function touchRendering(entry, key)
+	for i = #rendered, 1, -1 do
+		local held = rendered[i]
+		if held.entry == entry and held.key == key then
+			table.remove(rendered, i)
+			table.insert(rendered, held)
+			return true
+		end
+	end
+	return false
+end
+
+local function rememberRendering(entry, key)
+	if touchRendering(entry, key) then
+		return
+	end
+	table.insert(rendered, { entry = entry, key = key })
+	while #rendered > MAX_RENDERED_COVERS do
+		local oldest = table.remove(rendered, 1)
+		freeRendering(oldest.entry, oldest.key)
+	end
+end
+
+--- Free every cover rendered for these entries, e.g. before their catalog is replaced.
+-- @param item_table table Catalog entries
+function CoverLoader.freeCovers(item_table)
+	if not item_table then
+		return
+	end
+	local freed = {}
+	for _, entry in ipairs(item_table) do
+		for _, cover_bb in pairs(entry.cover_bbs or {}) do
+			cover_bb:free()
+		end
+		entry.cover_bbs = nil
+		entry.cover_bb = nil
+		entry.cover_bb_key = nil
+		freed[entry] = true
+	end
+	for i = #rendered, 1, -1 do
+		if freed[rendered[i].entry] then
+			table.remove(rendered, i)
+		end
+	end
 end
 
 --- Extract unique URLs from items pending cover load
@@ -57,7 +127,7 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 			-- No content means the download failed; mark it either way, or it is queued again.
 			local cover_bb
 			if content then
-				local ok, rendered = pcall(function()
+				local ok, result = pcall(function()
 					return RenderImage:renderImageData(
 						content,
 						#content,
@@ -67,9 +137,9 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 					)
 				end)
 				if ok then
-					cover_bb = rendered
+					cover_bb = result
 				else
-					Debug.error("CoverLoader:", "Failed to render cover:", tostring(rendered))
+					Debug.error("CoverLoader:", "Failed to render cover:", tostring(result))
 				end
 			end
 
@@ -79,6 +149,7 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 			if cover_bb then
 				entry.cover_bbs = entry.cover_bbs or {}
 				entry.cover_bbs[entry.cover_bb_key] = cover_bb
+				rememberRendering(entry, entry.cover_bb_key)
 			end
 
 			-- Update the widget to show the new cover (or error state)
@@ -96,6 +167,7 @@ end
 function CoverLoader.useCoverForSize(entry, cover_width, cover_height)
 	local key = sizeKey(cover_width, cover_height)
 	if entry.cover_bb_key == key then
+		touchRendering(entry, key)
 		return
 	end
 
@@ -107,7 +179,9 @@ function CoverLoader.useCoverForSize(entry, cover_width, cover_height)
 	local kept = entry.cover_bbs and entry.cover_bbs[key]
 	entry.cover_bb = kept
 	entry.cover_bb_key = kept and key or nil
-	if not kept then
+	if kept then
+		touchRendering(entry, key)
+	else
 		-- A cover that failed to download or decode fails at any size, and a failed entry never
 		-- matches the size key above, so clearing the flag here would re-fetch it on every page.
 		entry.lazy_load_cover = not entry.cover_failed
@@ -177,17 +251,7 @@ function CoverLoader.cleanup(menu)
 		menu.halt_image_loading = nil
 	end
 
-	-- Free cover image blitbuffers, every size the entry was drawn at
-	if menu.item_table then
-		for _, entry in ipairs(menu.item_table) do
-			for _, cover_bb in pairs(entry.cover_bbs or {}) do
-				cover_bb:free()
-			end
-			entry.cover_bbs = nil
-			entry.cover_bb = nil
-			entry.cover_bb_key = nil
-		end
-	end
+	CoverLoader.freeCovers(menu.item_table)
 end
 
 --- Initialize cover loading state on a menu
