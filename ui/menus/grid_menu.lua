@@ -786,13 +786,7 @@ function OPDSGridMenu:updateItems(select_number)
         self:_debugLog("Scheduling cover loading for", #self._items_to_update, "items")
 
         self._cover_queue = self._items_to_update
-
-        self._scheduled_cover_load = function()
-            if self._loadVisibleCovers then
-                self:_loadVisibleCovers()
-            end
-        end
-        UIManager:scheduleIn(1, self._scheduled_cover_load)
+        CoverLoader.scheduleLoad(self, 1)
     end
 end
 

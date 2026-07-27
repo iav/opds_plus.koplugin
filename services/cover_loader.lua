@@ -159,6 +159,28 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 	end
 end
 
+--- Schedule the pending covers, replacing whatever the previous page left running.
+-- The task must be one lasting closure per menu: a fresh one each page would leave the old
+-- one queued with nothing left to unschedule it by, and its batch repainting for good.
+-- @param menu table Menu instance
+-- @param delay number Seconds before loading starts
+function CoverLoader.scheduleLoad(menu, delay)
+	local UIManager = require("ui/uimanager")
+
+	CoverLoader.stopLoading(menu)
+
+	if not menu._scheduled_cover_load then
+		menu._scheduled_cover_load = function()
+			menu._cover_load_scheduled = false
+			if menu._loadVisibleCovers then
+				menu:_loadVisibleCovers()
+			end
+		end
+	end
+	menu._cover_load_scheduled = true
+	UIManager:scheduleIn(delay, menu._scheduled_cover_load)
+end
+
 --- Stop cover loading while a dialog covers the menu; CoverLoader.defer resumes it.
 -- @param menu table Menu instance
 function CoverLoader.stopLoading(menu)
@@ -171,6 +193,7 @@ function CoverLoader.stopLoading(menu)
 	if menu._scheduled_cover_load then
 		UIManager:unschedule(menu._scheduled_cover_load)
 	end
+	menu._cover_load_scheduled = false
 end
 
 --- Point the entry at its cover for this view's size, keeping the other view's rendering.
@@ -209,6 +232,13 @@ end
 function CoverLoader.loadVisibleCovers(menu, debug_log)
 	if not menu._items_to_update or #menu._items_to_update == 0 then
 		return nil
+	end
+
+	-- A batch left running keeps repainting the menu for covers nobody waits for any more,
+	-- and the caller is about to overwrite the only handle that could stop it.
+	if menu.halt_image_loading then
+		menu.halt_image_loading()
+		menu.halt_image_loading = nil
 	end
 
 	-- Extract unique cover URLs
@@ -300,16 +330,13 @@ end
 -- @param menu table Menu instance
 -- @param delay number|nil Seconds of quiet before loading resumes (default 1)
 function CoverLoader.defer(menu, delay)
-	local UIManager = require("ui/uimanager")
-
-	if menu.halt_image_loading then
-		menu.halt_image_loading()
-		menu.halt_image_loading = nil
-	end
-	if not menu._scheduled_cover_load then
+	-- Focus moves while the page is being built, and deferring then would replace the covers
+	-- it has just queued with the previous page's leftovers.
+	if not menu._cover_load_scheduled then
 		return
 	end
-	UIManager:unschedule(menu._scheduled_cover_load)
+
+	CoverLoader.stopLoading(menu)
 
 	menu._items_to_update = {}
 	for _, item in ipairs(menu._cover_queue or {}) do
@@ -318,7 +345,7 @@ function CoverLoader.defer(menu, delay)
 		end
 	end
 	if #menu._items_to_update > 0 then
-		UIManager:scheduleIn(delay or 1, menu._scheduled_cover_load)
+		CoverLoader.scheduleLoad(menu, delay or 1)
 	end
 end
 
