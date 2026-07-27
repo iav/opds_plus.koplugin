@@ -5,7 +5,9 @@ local util = require("util")
 
 local CoverCache = {}
 
-local CACHE_DIR = DataStorage:getDataDir() .. "/cache/opds_plus/covers"
+-- getDataDir() is "." on Kindle, which resolves against the working directory rather than the
+-- install path; getFullDataDir() answers with the absolute one.
+local CACHE_DIR = DataStorage:getFullDataDir() .. "/cache/opds_plus/covers"
 
 local function hashUrl(url)
 	local h1 = 5381
