@@ -9,11 +9,9 @@ local Debug = require("utils.debug")
 
 local CoverLoader = {}
 
--- A rendered cover is held by its entry until the catalog is left, so a long browse would
--- otherwise keep every page ever drawn. The device has no swap and little to spare; dropping
--- the oldest costs a re-render from the on-disk cache when the reader comes back.
--- Keep well over two full pages in both views: a cover still on screen is referenced by its
--- widget, and freeing it would leave that widget painting freed memory.
+-- Entries hold their covers until the catalog is left, so a long browse would keep every page
+-- ever drawn; the device has no swap. Dropping the oldest costs a re-render from the disk cache.
+-- Well over two pages in either view: a cover still on screen is painted from its widget.
 local MAX_RENDERED_COVERS = 40
 local rendered = {} -- oldest first, {entry, key}
 
@@ -160,8 +158,8 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 end
 
 --- Schedule the pending covers, replacing whatever the previous page left running.
--- The task must be one lasting closure per menu: a fresh one each page would leave the old
--- one queued with nothing left to unschedule it by, and its batch repainting for good.
+-- One lasting closure per menu: a fresh one each page would leave the old one queued with
+-- nothing to unschedule it by.
 -- @param menu table Menu instance
 -- @param delay number Seconds before loading starts
 function CoverLoader.scheduleLoad(menu, delay)
@@ -231,8 +229,7 @@ function CoverLoader.loadVisibleCovers(menu, debug_log)
 		return nil
 	end
 
-	-- A batch left running keeps repainting the menu for covers nobody waits for any more,
-	-- and the caller is about to overwrite the only handle that could stop it.
+	-- The caller is about to overwrite the only handle that could stop the running batch.
 	if menu.halt_image_loading then
 		menu.halt_image_loading()
 		menu.halt_image_loading = nil

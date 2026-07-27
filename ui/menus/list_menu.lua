@@ -311,10 +311,9 @@ function OPDSListMenuItem:onUnfocus()
 end
 
 function OPDSListMenuItem:update()
-    -- Re-initialize with updated entry data
     self:init()
-    -- Under a dialog the repaint would redraw the catalog and the dialog over it, for a cover
-    -- nobody can see. The entry keeps it; the next time the page is built it is drawn from there.
+    -- Under a dialog this would redraw the catalog and the dialog over it, unseen; the entry
+    -- keeps the cover for the next time the page is built.
     if UIManager:getTopmostVisibleWidget() ~= self.show_parent then
         return
     end
@@ -548,8 +547,7 @@ function OPDSListMenu:updateItems(select_number)
         end
     end
 
-    -- Publish this page's queue before moving the focus: focus handlers defer the load, and
-    -- deferring reads _cover_queue -- the previous page's one, if it has not been replaced yet.
+    -- Before the focus moves: its handlers defer the load, and defer reads _cover_queue.
     self._cover_queue = self._items_to_update
 
     -- Update page info

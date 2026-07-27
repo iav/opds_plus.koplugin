@@ -21,7 +21,6 @@ function OPDSCoverMenu:_debugLog(...)
 end
 
 function OPDSCoverMenu:updateItems(select_number)
-    -- Drop what the previous page left running, before this one queues its own covers
     CoverLoader.stopLoading(self)
 
     -- Check if any items have cover URLs
