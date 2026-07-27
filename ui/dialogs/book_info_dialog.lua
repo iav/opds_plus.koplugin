@@ -170,6 +170,10 @@ end
 function BookInfoDialog.build(browser, item)
 	local DownloadManager = require("core.download_manager")
 	local ImageLoader = require("services.image_loader")
+	local CoverLoader = require("services.cover_loader")
+
+	-- Covers loading behind the dialog repaint the browser, and no key reaches it to defer them.
+	CoverLoader.stopLoading(browser)
 
 	-- Store custom filename in the browser context for this item
 	-- Initialize with default filename
@@ -211,6 +215,7 @@ function BookInfoDialog.build(browser, item)
 	-- Build cover widget - make it tappable
 	local cover_container
 	local dialog_cover_bb = nil -- Track our high-res cover for cleanup
+	local halt_dialog_cover = nil -- Cancels our own cover fetch when the dialog closes
 
 	if item.cover_bb or cover_link then
 		-- Create the image widget (start with low-res if available, or placeholder)
@@ -292,7 +297,7 @@ function BookInfoDialog.build(browser, item)
 			end
 
 			-- Start async load
-			ImageLoader:loadImages(
+			halt_dialog_cover = select(2, ImageLoader:loadImages(
 				{ cover_link },
 				function(loaded_url, content)
 					updateCoverWidget(content)
@@ -302,7 +307,7 @@ function BookInfoDialog.build(browser, item)
 				browser.settings and browser.settings.cover_cache_enabled ~= false,
 				browser.settings and browser.settings.cover_cache_max_mb,
 				browser.settings and browser.settings.cover_cache_ttl_minutes
-			)
+			))
 		end
 	end
 
@@ -603,8 +608,10 @@ function BookInfoDialog.build(browser, item)
 		browser.book_info_dialog.movable,
 	}
 
-	-- The dialog did not exist yet where the table was built; FocusManager repaints show_parent.
+	-- The dialog did not exist yet where these were built; FocusManager repaints show_parent.
 	button_table.show_parent = browser.book_info_dialog
+	description_widget.show_parent = browser.book_info_dialog
+	title_bar.show_parent = browser.book_info_dialog
 
 	if Device:hasKeys() then
 		browser.book_info_dialog.key_events = {
@@ -642,11 +649,16 @@ function BookInfoDialog.build(browser, item)
 	function browser.book_info_dialog:onCloseWidget()
 		-- Clean up custom filename when dialog closes
 		browser._custom_filename = nil
+		if halt_dialog_cover then
+			halt_dialog_cover()
+			halt_dialog_cover = nil
+		end
 		-- Clean up our high-res dialog cover if we created one
 		if dialog_cover_bb then
 			dialog_cover_bb:free()
 			dialog_cover_bb = nil
 		end
+		CoverLoader.defer(browser)
 		UIManager:setDirty(nil, "ui")
 	end
 

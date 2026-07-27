@@ -159,6 +159,20 @@ function CoverLoader.createRenderCallback(items_by_url, cover_width, cover_heigh
 	end
 end
 
+--- Stop cover loading while a dialog covers the menu; CoverLoader.defer resumes it.
+-- @param menu table Menu instance
+function CoverLoader.stopLoading(menu)
+	local UIManager = require("ui/uimanager")
+
+	if menu.halt_image_loading then
+		menu.halt_image_loading()
+		menu.halt_image_loading = nil
+	end
+	if menu._scheduled_cover_load then
+		UIManager:unschedule(menu._scheduled_cover_load)
+	end
+end
+
 --- Point the entry at its cover for this view's size, keeping the other view's rendering.
 -- Re-rendering costs a decode, or a download once the cached image has expired.
 -- @param entry table Catalog entry
