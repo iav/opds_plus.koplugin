@@ -171,13 +171,11 @@ function CoverLoader.scheduleLoad(menu, delay)
 
 	if not menu._scheduled_cover_load then
 		menu._scheduled_cover_load = function()
-			menu._cover_load_scheduled = false
 			if menu._loadVisibleCovers then
 				menu:_loadVisibleCovers()
 			end
 		end
 	end
-	menu._cover_load_scheduled = true
 	UIManager:scheduleIn(delay, menu._scheduled_cover_load)
 end
 
@@ -193,7 +191,6 @@ function CoverLoader.stopLoading(menu)
 	if menu._scheduled_cover_load then
 		UIManager:unschedule(menu._scheduled_cover_load)
 	end
-	menu._cover_load_scheduled = false
 end
 
 --- Point the entry at its cover for this view's size, keeping the other view's rendering.
@@ -330,12 +327,6 @@ end
 -- @param menu table Menu instance
 -- @param delay number|nil Seconds of quiet before loading resumes (default 1)
 function CoverLoader.defer(menu, delay)
-	-- Focus moves while the page is being built, and deferring then would replace the covers
-	-- it has just queued with the previous page's leftovers.
-	if not menu._cover_load_scheduled then
-		return
-	end
-
 	CoverLoader.stopLoading(menu)
 
 	menu._items_to_update = {}
