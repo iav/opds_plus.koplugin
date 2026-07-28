@@ -546,36 +546,8 @@ function OPDSListMenu:updateItems(select_number)
         return "ui", refresh_dimen
     end)
 
-    -- Update page info with custom text
-    if self.page_info then
-        local custom_text = "≡ " .. self.page .. "/" .. self.page_num .. " (" .. self.perpage .. " items)"
-
-        -- Find and replace the text widget
-        for i = 1, 10 do
-            if self.page_info[i] and type(self.page_info[i]) == "table" and self.page_info[i].text then
-                -- Get the original widget's properties (with fallbacks)
-                local old_widget = self.page_info[i]
-                local face = old_widget.face or Font:getFace("smallinfofont")
-                local fgcolor = old_widget.fgcolor or Blitbuffer.COLOR_BLACK
-
-                -- Free the old widget
-                if old_widget.free then
-                    old_widget:free()
-                end
-
-                -- Create new TextWidget with updated text
-                self.page_info[i] = TextWidget:new {
-                    text = custom_text,
-                    face = face,
-                    fgcolor = fgcolor,
-                }
-
-                -- Mark dirty for full refresh
-                UIManager:setDirty(self.show_parent, "ui")
-
-                break
-            end
-        end
+    if self.page_info_text then
+        self.page_info_text:setText(OPDSListMenu.getPageInfo(self))
     end
 
     -- Schedule cover loading
