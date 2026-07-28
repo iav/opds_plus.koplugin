@@ -88,6 +88,7 @@ function NavigationHandler.genItemTableFromCatalog(catalog, item_url, browser_co
 	for __, entry in ipairs(feed.entry or {}) do
 		local item = {}
 		item.acquisitions = {}
+		item.related = {}
 
 		if entry.link then
 			for ___, link in ipairs(entry.link) do
@@ -128,6 +129,14 @@ function NavigationHandler.genItemTableFromCatalog(catalog, item_url, browser_co
 						item.thumbnail = link_href
 					elseif browser_context.image_rel[link.rel] then
 						item.image = link_href
+						-- Feeds the entry points at: everything by this author, this series, and
+						-- whatever else the server relates the book to.
+					elseif link.rel == "related" and CatalogUtils.isFeedLink(link) then
+						table.insert(item.related, {
+							href  = link_href,
+							title = link.title,
+							kind  = CatalogUtils.relatedKind(link),
+						})
 						-- Other downloadable types
 					elseif link.rel ~= "alternate" and DocumentRegistry:hasProvider(nil, link.type) then
 						table.insert(item.acquisitions, {

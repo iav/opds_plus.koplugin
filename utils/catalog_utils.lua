@@ -3,6 +3,28 @@
 
 local CatalogUtils = {}
 
+--- Whether a link points at another feed rather than at a file or a web page.
+-- @param link table Link element from an OPDS entry
+-- @return boolean
+function CatalogUtils.isFeedLink(link)
+	return type(link.type) == "string" and link.type:find("application/atom%+xml") == 1
+end
+
+--- What a related feed holds, as far as the href lets us tell.
+-- Servers say nothing about this in the link itself, so the path is all there is to go on;
+-- when it says nothing either, the caller falls back to the title the server supplies.
+-- @param link table Link element from an OPDS entry
+-- @return string|nil "author", "series", or nil
+function CatalogUtils.relatedKind(link)
+	local href = type(link.href) == "string" and link.href:lower() or ""
+	if href:find("author", 1, true) then
+		return "author"
+	elseif href:find("sequence", 1, true) or href:find("series", 1, true) then
+		return "series"
+	end
+	return nil
+end
+
 --- Build a catalog entry for the root menu
 -- @param server table Server configuration object
 -- @return table Formatted catalog entry
