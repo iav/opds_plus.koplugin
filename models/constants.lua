@@ -67,8 +67,9 @@ local Constants = {
 		DUPLICATE_NOTIFICATION_TIMEOUT = 3,
 		DOWNLOAD_SCHEDULE_DELAY = 1,
 		-- Must outlast the repaint that follows each cover: while a scheduled task is already due,
-		-- UIManager loops over tasks and never reaches the input poll.
-		IMAGE_BATCH_DELAY = 0.5,
+		-- UIManager loops over tasks and never reaches the input poll. Cells repaint themselves
+		-- rather than the whole browser, so this only has to cover one cell.
+		IMAGE_BATCH_DELAY = 0.05,
 	},
 
 	-- Cache Configuration

@@ -311,15 +311,26 @@ function OPDSListMenuItem:onUnfocus()
 end
 
 function OPDSListMenuItem:update()
+    -- init() replaces dimen, and only paintTo knows where the item sits.
+    local drawn_at = self.dimen and self.dimen.x and { x = self.dimen.x, y = self.dimen.y }
     self:init()
     -- Under a dialog this would redraw the catalog and the dialog over it, unseen; the entry
     -- keeps the cover for the next time the page is built.
     if UIManager:getTopmostVisibleWidget() ~= self.show_parent then
         return
     end
-    UIManager:setDirty(self.show_parent, function()
-        return "ui", self.dimen
-    end)
+    if not drawn_at then
+        -- Never painted, so there is nothing to paint over: let the page draw it.
+        UIManager:setDirty(self.show_parent, function()
+            return "ui", self.dimen
+        end)
+        return
+    end
+    -- Paint this item alone: setDirty on the browser walks its whole tree, which costs as much
+    -- as a page turn for one cover. Same idiom as Button and the virtual keyboard.
+    self.dimen.x, self.dimen.y = drawn_at.x, drawn_at.y
+    UIManager:widgetRepaint(self, drawn_at.x, drawn_at.y)
+    UIManager:setDirty(nil, "ui", self.dimen)
 end
 
 -- Handle tap events - delegate to parent menu
