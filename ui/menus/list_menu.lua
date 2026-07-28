@@ -45,7 +45,8 @@ local COVER_CONFIG = {
 
     -- Spacing and padding
     item_top_padding = 6,
-    item_bottom_padding = 6,
+    -- Fits the focus underline plus clearance, so the last item's line stays off the footer.
+    item_bottom_padding = math.max(6, Size.line.focus_indicator + Size.padding.default + Size.padding.small),
     cover_left_margin = 6,
     cover_right_margin = 8,
 }
@@ -126,6 +127,7 @@ function OPDSListMenuItem:init()
             width = self.cover_width,
             height = self.cover_height,
             alpha = true,
+            image_disposable = false, -- the entry owns it, CoverLoader.cleanup frees it
         }
     elseif self.entry.cover_url and self.entry.lazy_load_cover then
         inner_cover_widget = UIUtils.createPlaceholderCover(self.cover_width, self.cover_height, "loading")
@@ -250,6 +252,15 @@ function OPDSListMenuItem:init()
 
     -- Assemble the complete item with proper spacing
     local TopContainer = require("ui/widget/container/topcontainer")
+    local LineWidget = require("ui/widget/linewidget")
+
+    -- Focus underline: white until focused, and it eats bottom padding instead of adding height.
+    local underline_size = math.min(Size.line.focus_indicator, bottom_padding)
+    local underline_gap = math.min(Size.padding.default, bottom_padding - underline_size)
+    self._underline = LineWidget:new {
+        dimen = Geom:new { w = self.width, h = underline_size },
+        background = self._is_focused and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_WHITE,
+    }
 
     self[1] = FrameContainer:new {
         width = self.width,
@@ -274,19 +285,52 @@ function OPDSListMenuItem:init()
                     text_group,
                 },
             },
-            VerticalSpan:new { width = bottom_padding },
+            VerticalSpan:new { width = bottom_padding - underline_size - underline_gap },
+            self._underline,
+            VerticalSpan:new { width = underline_gap },
         }
     }
 
     self.cover_widget = cover_widget
 end
 
+-- The item is rebuilt when its cover arrives, hence the flag init() restores the line from.
+function OPDSListMenuItem:onFocus()
+    self._is_focused = true
+    self._underline.background = Blitbuffer.COLOR_BLACK
+    if self.menu then
+        CoverLoader.defer(self.menu)
+    end
+    return true
+end
+
+function OPDSListMenuItem:onUnfocus()
+    self._is_focused = false
+    self._underline.background = Blitbuffer.COLOR_WHITE
+    return true
+end
+
 function OPDSListMenuItem:update()
-    -- Re-initialize with updated entry data
+    -- init() replaces dimen, and only paintTo knows where the item sits.
+    local drawn_at = self.dimen and self.dimen.x and { x = self.dimen.x, y = self.dimen.y }
     self:init()
-    UIManager:setDirty(self.show_parent, function()
-        return "ui", self.dimen
-    end)
+    -- Under a dialog this would redraw the catalog and the dialog over it, unseen; the entry
+    -- keeps the cover for the next time the page is built.
+    if UIManager:getTopmostVisibleWidget() ~= self.show_parent then
+        return
+    end
+    if not drawn_at then
+        -- Never painted, so there is nothing to paint over: let the page draw it.
+        UIManager:setDirty(self.show_parent, function()
+            return "ui", self.dimen
+        end)
+        return
+    end
+    -- Paint this item alone: setDirty on the browser walks its whole tree, which costs as much
+    -- as a page turn for one cover. Same idiom as Button and the virtual keyboard.
+    self.dimen.x, self.dimen.y = drawn_at.x, drawn_at.y
+    UIManager:widgetRepaint(self, drawn_at.x, drawn_at.y)
+    UIManager:setDirty(nil, "ui", self.dimen)
 end
 
 -- Handle tap events - delegate to parent menu
@@ -475,6 +519,8 @@ function OPDSListMenu:updateItems(select_number)
         local entry = self.item_table[entry_idx]
 
         if entry then
+            CoverLoader.useCoverForSize(entry, self.cover_width, self.cover_height)
+
             local item_width = self.content_width or Screen:getWidth()
             local item_height = self.item_height
 
@@ -512,6 +558,9 @@ function OPDSListMenu:updateItems(select_number)
         end
     end
 
+    -- Before the focus moves: its handlers defer the load, and defer reads _cover_queue.
+    self._cover_queue = self._items_to_update
+
     -- Update page info
     self:updatePageInfo(select_number)
 
@@ -521,50 +570,14 @@ function OPDSListMenu:updateItems(select_number)
         return "ui", refresh_dimen
     end)
 
-    -- Update page info with custom text
-    if self.page_info then
-        local custom_text = "≡ " .. self.page .. "/" .. self.page_num .. " (" .. self.perpage .. " items)"
-
-        -- Find and replace the text widget
-        for i = 1, 10 do
-            if self.page_info[i] and type(self.page_info[i]) == "table" and self.page_info[i].text then
-                -- Get the original widget's properties (with fallbacks)
-                local old_widget = self.page_info[i]
-                local face = old_widget.face or Font:getFace("smallinfofont")
-                local fgcolor = old_widget.fgcolor or Blitbuffer.COLOR_BLACK
-
-                -- Free the old widget
-                if old_widget.free then
-                    old_widget:free()
-                end
-
-                -- Create new TextWidget with updated text
-                self.page_info[i] = TextWidget:new {
-                    text = custom_text,
-                    face = face,
-                    fgcolor = fgcolor,
-                }
-
-                -- Mark dirty for full refresh
-                UIManager:setDirty(self.show_parent, "ui")
-
-                break
-            end
-        end
+    if self.page_info_text then
+        self.page_info_text:setText(OPDSListMenu.getPageInfo(self))
     end
 
     -- Schedule cover loading
     if #self._items_to_update > 0 then
         self:_debugLog("Scheduling cover loading for", #self._items_to_update, "items")
-
-        -- Store the scheduled function so it can be cancelled if needed
-        self._scheduled_cover_load = function()
-            if self._loadVisibleCovers then
-                self:_loadVisibleCovers()
-            end
-        end
-
-        UIManager:scheduleIn(1, self._scheduled_cover_load)
+        CoverLoader.scheduleLoad(self, 1)
     end
 end
 

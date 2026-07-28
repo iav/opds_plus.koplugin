@@ -79,12 +79,9 @@ function Settings:initializeDefaults()
 	if self.data.cover_cache_enabled == nil then
 		self.data.cover_cache_enabled = true
 	end
-	if self.data.cover_cache_max_mb == nil then
-		self.data.cover_cache_max_mb = Constants.COVER_CACHE.DEFAULT_MAX_MB
-	end
-	if self.data.cover_cache_ttl_minutes == nil then
-		self.data.cover_cache_ttl_minutes = Constants.COVER_CACHE.DEFAULT_TTL_MINUTES
-	end
+	-- The cache size and lifetime are deliberately left unset until the reader picks one: stored
+	-- here, they would outlive any later default, and the size is chosen from the free space of
+	-- the device it runs on rather than from a constant.
 
 	-- Font settings
 	for key, default_value in pairs(Constants.DEFAULT_FONT_SETTINGS) do

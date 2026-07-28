@@ -46,8 +46,8 @@ local Constants = {
 	TIMEOUTS = {
 		DEFAULT = 10,
 		MAX_TIME = 30,
-		IMAGE_LOAD = 10,
-		IMAGE_MAX_TIME = 30,
+		IMAGE_LOAD = 4,
+		IMAGE_MAX_TIME = 8,
 	},
 
 	-- Sync Settings
@@ -66,7 +66,10 @@ local Constants = {
 		NOTIFICATION_TIMEOUT = 1,
 		DUPLICATE_NOTIFICATION_TIMEOUT = 3,
 		DOWNLOAD_SCHEDULE_DELAY = 1,
-		IMAGE_BATCH_DELAY = 0.2,
+		-- Must outlast the repaint that follows each cover: while a scheduled task is already due,
+		-- UIManager loops over tasks and never reaches the input poll. Cells repaint themselves
+		-- rather than the whole browser, so this only has to cover one cell.
+		IMAGE_BATCH_DELAY = 0.05,
 	},
 
 	-- Cache Configuration
@@ -74,8 +77,11 @@ local Constants = {
 
 	-- Cover Cache Configuration
 	COVER_CACHE = {
-		DEFAULT_MAX_MB = 64,
-		DEFAULT_TTL_MINUTES = 720, -- 12 hours
+		DEFAULT_MAX_MB = 256,
+		-- Covers are worth less than the room a download needs, so give way on a full device.
+		LOW_SPACE_MAX_MB = 64,
+		LOW_SPACE_MB = 300,
+		DEFAULT_TTL_MINUTES = 10080, -- a week; a book's cover does not change
 		MIN_MAX_MB = 8,
 		MAX_MAX_MB = 1024,
 		MIN_TTL_MINUTES = 5,

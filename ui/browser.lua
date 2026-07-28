@@ -1,6 +1,7 @@
 local BD = require("ui/bidi")
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
+local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
 local Menu = require("ui/widget/menu")
 local NetworkMgr = require("ui/network/manager")
@@ -13,6 +14,7 @@ local T = ffiUtil.template
 
 -- Import the custom cover menu for displaying book covers
 local OPDSCoverMenu = require("ui.menus.cover_menu")
+local CoverLoader = require("services.cover_loader")
 
 -- Import constants and utilities
 local Constants = require("models.constants")
@@ -79,6 +81,20 @@ function OPDSBrowser:init()
     self.title_bar_right_icon = nil
     self.facet_groups = nil
     OPDSCoverMenu.init(self)
+
+    -- Menu maps the back key to Close; walk up the catalog instead, and leave Home to close.
+    if Device:hasKeys() then
+        self.key_events.Back = { { Device.input.group.Back } }
+        self.key_events.Close = { { "Home" } }
+    end
+end
+
+function OPDSBrowser:onBack()
+    CoverLoader.defer(self)
+    if self.paths and #self.paths > 0 then
+        return self:onReturn()
+    end
+    return self:onClose()
 end
 
 function OPDSBrowser:_debugLog(...)
@@ -105,18 +121,46 @@ function OPDSBrowser:toggleViewMode()
         timeout = 1,
     })
 
-    -- Refresh the current view WITHOUT breaking navigation or auth context
-    if #self.paths > 0 then
-        -- We're in a catalog - get current URL
-        local current_path = self.paths[#self.paths]
-        local current_url = current_path.url
+    -- The views hold a different number of items per page, so remember the item, not the page.
+    local itemnumber = self:getFocusedItemNumber()
 
-        -- Reload the catalog with same URL
-        self:updateCatalog(current_url, true)
-    else
-        -- We're at root level - just switch the display mode
-        self:switchItemTable(self.catalog_title, self.item_table, -1)
+    self:switchItemTable(self.catalog_title, self.item_table, itemnumber)
+
+    -- switchItemTable paged with the old view's perpage and focused the first item.
+    local page = self:getPageNumber(itemnumber)
+    local select_number = itemnumber - ((page - 1) * self.perpage)
+    if page ~= self.page or select_number ~= 1 then
+        self.page = page
+        self:updateItems(select_number)
     end
+end
+
+-- Covers are fetched on the UI thread, so a page of them holds every keypress that
+-- follows. Any key means the user is still navigating: let the covers wait for a pause.
+function OPDSBrowser:onKeyPress(key)
+    CoverLoader.defer(self)
+    return Menu.onKeyPress(self, key)
+end
+
+OPDSBrowser.onKeyRepeat = OPDSBrowser.onKeyPress
+
+-- Nothing else frees the covers of the catalog being left: the widgets do not own them.
+function OPDSBrowser:switchItemTable(new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
+    if new_item_table and new_item_table ~= self.item_table then
+        CoverLoader.freeCovers(self.item_table)
+    end
+    return OPDSCoverMenu.switchItemTable(self, new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
+end
+
+--- Number of the focused item within the whole catalog, 1 if nothing is focused.
+function OPDSBrowser:getFocusedItemNumber()
+    local selected = self.selected
+    if not selected or not self.perpage then
+        return 1
+    end
+    local columns = (self.layout and self.layout[1]) and #self.layout[1] or 1
+    local in_page = ((selected.y - 1) * columns) + selected.x
+    return ((self.page - 1) * self.perpage) + in_page
 end
 
 function OPDSBrowser:showOPDSMenu()
@@ -368,23 +412,30 @@ function OPDSBrowser:onReturn()
         self:updateCatalog(path.url, true)
     else
         -- return to root path, we simply reinit opdsbrowser
-        self:init()
+        self:returnToRoot()
     end
     return true
 end
 
 -- Menu action on return-arrow long-press (return to root path)
 function OPDSBrowser:onHoldReturn()
-    self:init()
+    self:returnToRoot()
     return true
+end
+
+-- init() rebuilds the browser without going through switchItemTable, so the covers of the
+-- catalog being left would stay allocated in CoverLoader.
+function OPDSBrowser:returnToRoot()
+    CoverLoader.freeCovers(self.item_table)
+    self:init()
 end
 
 -- Menu action on next-page chevron tap (request and show more catalog entries)
 function OPDSBrowser:onNextPage(fill_only)
-    -- self.page_num comes from menu.lua
-    local page_num = self.page_num
-    -- fetch more entries until we fill out one page or reach the end
-    while page_num == self.page_num do
+    -- Fetching blocks the UI, so ask only when running out. A page turn looks one further ahead
+    -- to hide the wait; the initial fill does not, or nothing is shown until two fetches are done.
+    local lookahead = fill_only and 1 or 2
+    while self.page + lookahead > self.page_num do
         local hrefs = self.item_table.hrefs
         if hrefs and hrefs.next then
             if not self:appendCatalog(hrefs.next) then

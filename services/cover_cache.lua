@@ -1,28 +1,14 @@
 local DataStorage = require("datastorage")
 local lfs = require("libs/libkoreader-lfs")
 local bit = require("bit")
+local util = require("util")
+local Constants = require("models.constants")
 
 local CoverCache = {}
 
-local CACHE_DIR = DataStorage:getDataDir() .. "/cache/opds_plus/covers"
-
-local function ensureDir(path)
-	if lfs.attributes(path, "mode") == "directory" then
-		return true
-	end
-
-	local current = ""
-	for part in path:gmatch("[^/]+") do
-		current = current == "" and ("/" .. part) or (current .. "/" .. part)
-		if lfs.attributes(current, "mode") ~= "directory" then
-			local ok = lfs.mkdir(current)
-			if not ok then
-				return false
-			end
-		end
-	end
-	return true
-end
+-- getDataDir() is "." on Kindle, which resolves against the working directory rather than the
+-- install path; getFullDataDir() answers with the absolute one.
+local CACHE_DIR = DataStorage:getFullDataDir() .. "/cache/opds_plus/covers"
 
 local function hashUrl(url)
 	local h1 = 5381
@@ -88,6 +74,45 @@ local function listCacheFiles()
 	return files, total
 end
 
+--- Free space at a path, in MB, or nil if it cannot be told.
+-- util.diskUsage runs "df -kP", and busybox on legacy Kindles has no -P and prints nothing,
+-- so fall back to plain "df -k" and read the last row it prints.
+local function freeSpaceMB(dir)
+	local usage = util.diskUsage(dir)
+	if usage and usage.available then
+		return usage.available / 1024 / 1024
+	end
+	local handle = io.popen("df -k " .. util.shell_escape({ dir }) .. " 2>/dev/null | tail -1")
+	if not handle then
+		return nil
+	end
+	local row = handle:read("*l")
+	handle:close()
+	if not row then
+		return nil
+	end
+	-- Anchor on the use% column: a device name can hold digits of its own (/dev/sda1).
+	local available = row:match("%d+%s+%d+%s+(%d+)%s+%d+%%")
+	return available and tonumber(available) / 1024 or nil
+end
+
+local default_max_bytes
+
+--- Cache ceiling to use when the user has not set one: smaller on a device short on space.
+-- @return number Maximum cache size in bytes
+function CoverCache.defaultMaxBytes()
+	if default_max_bytes then
+		return default_max_bytes
+	end
+	local mb = Constants.COVER_CACHE.DEFAULT_MAX_MB
+	local free_mb = freeSpaceMB(DataStorage:getFullDataDir())
+	if free_mb and free_mb < Constants.COVER_CACHE.LOW_SPACE_MB then
+		mb = Constants.COVER_CACHE.LOW_SPACE_MAX_MB
+	end
+	default_max_bytes = mb * 1024 * 1024
+	return default_max_bytes
+end
+
 local function pruneToMaxBytes(max_bytes)
 	if not max_bytes or max_bytes <= 0 then
 		return
@@ -137,7 +162,7 @@ function CoverCache.put(url, content, max_bytes)
 		return false
 	end
 
-	if not ensureDir(CACHE_DIR) then
+	if not util.makePath(CACHE_DIR) then
 		return false
 	end
 
