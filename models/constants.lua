@@ -77,8 +77,11 @@ local Constants = {
 
 	-- Cover Cache Configuration
 	COVER_CACHE = {
-		DEFAULT_MAX_MB = 64,
-		DEFAULT_TTL_MINUTES = 720, -- 12 hours
+		DEFAULT_MAX_MB = 256,
+		-- Covers are worth less than the room a download needs, so give way on a full device.
+		LOW_SPACE_MAX_MB = 64,
+		LOW_SPACE_MB = 300,
+		DEFAULT_TTL_MINUTES = 10080, -- a week; a book's cover does not change
 		MIN_MAX_MB = 8,
 		MAX_MAX_MB = 1024,
 		MIN_TTL_MINUTES = 5,

@@ -28,7 +28,8 @@ function Batch:loadImages(urls)
     local stop_loading = false
     local pending_urls = { table.unpack(urls) }
     local ttl_seconds = (self.cache_ttl_minutes or Constants.COVER_CACHE.DEFAULT_TTL_MINUTES) * 60
-    local max_bytes = (self.cache_max_mb or Constants.COVER_CACHE.DEFAULT_MAX_MB) * 1024 * 1024
+    local max_bytes = self.cache_max_mb and (self.cache_max_mb * 1024 * 1024)
+        or CoverCache.defaultMaxBytes()
 
     local run_image
     run_image = function()
