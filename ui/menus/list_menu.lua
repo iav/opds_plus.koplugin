@@ -45,7 +45,8 @@ local COVER_CONFIG = {
 
     -- Spacing and padding
     item_top_padding = 6,
-    item_bottom_padding = 6,
+    -- Fits the focus underline plus clearance, so the last item's line stays off the footer.
+    item_bottom_padding = math.max(6, Size.line.focus_indicator + Size.padding.default + Size.padding.small),
     cover_left_margin = 6,
     cover_right_margin = 8,
 }
@@ -250,6 +251,15 @@ function OPDSListMenuItem:init()
 
     -- Assemble the complete item with proper spacing
     local TopContainer = require("ui/widget/container/topcontainer")
+    local LineWidget = require("ui/widget/linewidget")
+
+    -- Focus underline: white until focused, and it eats bottom padding instead of adding height.
+    local underline_size = math.min(Size.line.focus_indicator, bottom_padding)
+    local underline_gap = math.min(Size.padding.default, bottom_padding - underline_size)
+    self._underline = LineWidget:new {
+        dimen = Geom:new { w = self.width, h = underline_size },
+        background = self._is_focused and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_WHITE,
+    }
 
     self[1] = FrameContainer:new {
         width = self.width,
@@ -274,11 +284,26 @@ function OPDSListMenuItem:init()
                     text_group,
                 },
             },
-            VerticalSpan:new { width = bottom_padding },
+            VerticalSpan:new { width = bottom_padding - underline_size - underline_gap },
+            self._underline,
+            VerticalSpan:new { width = underline_gap },
         }
     }
 
     self.cover_widget = cover_widget
+end
+
+-- The item is rebuilt when its cover arrives, hence the flag init() restores the line from.
+function OPDSListMenuItem:onFocus()
+    self._is_focused = true
+    self._underline.background = Blitbuffer.COLOR_BLACK
+    return true
+end
+
+function OPDSListMenuItem:onUnfocus()
+    self._is_focused = false
+    self._underline.background = Blitbuffer.COLOR_WHITE
+    return true
 end
 
 function OPDSListMenuItem:update()
