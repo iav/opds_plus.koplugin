@@ -230,11 +230,15 @@ end
 --- Leave the book behind and open one of the feeds it points at.
 -- @param browser table OPDSBrowser instance
 -- @param href string Feed address
-local function jumpTo(browser, href)
+-- @param title string Name for the feed, shown in the title bar and kept in the path
+local function jumpTo(browser, href, title)
 	if browser.book_info_dialog then
 		UIManager:close(browser.book_info_dialog)
 		browser.book_info_dialog = nil
 	end
+	-- Selecting a catalog names it before the fetch; a jump has to do the same, or the feed
+	-- arrives under the name of the catalog the book was found in.
+	browser.catalog_title = title or browser.catalog_title
 	NetworkMgr:runWhenConnected(function()
 		browser:updateCatalog(href)
 	end)
@@ -495,10 +499,11 @@ function BookInfoDialog.build(browser, item)
 	local related_buttons = {}
 	if not Device:hasKeyboard() then
 		for _, rel in ipairs(related) do
+			local text = rel.label .. ": " .. rel.value
 			table.insert(related_buttons, {
-				text = rel.label .. ": " .. rel.value,
+				text = text,
 				callback = function()
-					jumpTo(browser, rel.href)
+					jumpTo(browser, rel.href, text)
 				end,
 			})
 		end
@@ -736,7 +741,7 @@ function BookInfoDialog.build(browser, item)
 			browser.book_info_dialog.key_events = browser.book_info_dialog.key_events or {}
 			browser.book_info_dialog.key_events[event] = { { rel.key } }
 			browser.book_info_dialog["on" .. event] = function()
-				jumpTo(browser, rel.href)
+				jumpTo(browser, rel.href, rel.label .. ": " .. rel.value)
 				return true
 			end
 		end
