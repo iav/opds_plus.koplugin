@@ -211,9 +211,14 @@ local function buildRelated(item)
 			if rel.kind == "author" then
 				-- item.author names every author of the book at once, so it can stand for the
 				-- link only while there is a single author feed for it to stand for; a book of
-				-- two would otherwise show the same pair of names on both lines.
+				-- two would otherwise show the same pair of names on both lines. It still has
+				-- to stand in when the server named nobody, or the line would be blank.
 				local named = authors == 1 and item.author or nil
-				label, value = _("Author"), named or relatedValue(rel.title)
+				value = named or relatedValue(rel.title)
+				if value == "" then
+					value = item.author or ""
+				end
+				label = _("Author")
 			elseif rel.kind == "series" then
 				label, value = _("Series"), relatedValue(rel.title)
 			else
