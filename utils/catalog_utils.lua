@@ -3,6 +3,53 @@
 
 local CatalogUtils = {}
 
+--- Whether a link points at another feed rather than at a file or a web page.
+-- @param link table Link element from an OPDS entry
+-- @return boolean
+function CatalogUtils.isFeedLink(link)
+	if type(link.type) ~= "string" then
+		return false
+	end
+	-- A media type is case-insensitive and may be padded, so a server writing Application/Atom+XML
+	-- means the same thing and its feeds have to be recognised all the same.
+	local media_type = link.type:lower():gsub("^%s+", "")
+	return media_type:find("application/atom%+xml") == 1
+end
+
+--- What a related feed holds, as far as the href lets us tell.
+-- Servers say nothing about this in the link itself, so the path is all there is to go on;
+-- when it says nothing either, the caller falls back to the title the server supplies.
+-- @param link table Link element from an OPDS entry
+-- @return string|nil "author", "series", or nil
+local KIND_SEGMENTS = {
+	author        = "author",
+	authors       = "author",
+	authorsindex  = "author",
+	series        = "series",
+	sequence      = "series",
+	sequences     = "series",
+	sequencebooks = "series",
+}
+
+function CatalogUtils.relatedKind(link)
+	if type(link.href) ~= "string" then
+		return nil
+	end
+	-- Only the path says anything: a host may be named books.authorhouse.com and a query may
+	-- sort by author without either feed being one. Whole segments, too, for the same reason.
+	local path = link.href:lower()
+		:gsub("^%a[%w+.-]*:", "") -- scheme
+		:gsub("^//[^/]*", "")     -- host
+		:gsub("[?#].*", "")       -- query and fragment
+	for segment in path:gmatch("[^/]+") do
+		local kind = KIND_SEGMENTS[segment]
+		if kind then
+			return kind
+		end
+	end
+	return nil
+end
+
 --- Build a catalog entry for the root menu
 -- @param server table Server configuration object
 -- @return table Formatted catalog entry

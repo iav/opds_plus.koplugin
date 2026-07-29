@@ -33,6 +33,8 @@ local _ = require("gettext")
 local Screen = Device.screen
 local T = require("ffi/util").template
 
+local NetworkMgr = require("ui/network/manager")
+
 local Constants = require("models.constants")
 local OPDSPSE = require("services.kavita")
 
@@ -160,6 +162,105 @@ local function showFormatSelectionDialog(browser, item, downloadable, add_to_que
 		buttons = buttons,
 	}
 	UIManager:show(browser.format_dialog)
+end
+
+-- Servers name a series feed in prose ("All books in the series \"Foo\""), and quote the name
+-- the way their own language does, sometimes leaving the quotes as XML entities. Take what is
+-- quoted, whichever pair is used, and let the line's own label say what it is.
+local QUOTE_PAIRS = {
+	{ '"',         '"' },
+	{ "\u{00AB}",  "\u{00BB}" }, -- « »
+	{ "\u{201E}",  "\u{201C}" }, -- „ “
+	{ "\u{201C}",  "\u{201D}" }, -- “ ”
+}
+
+local function relatedValue(title)
+	if type(title) ~= "string" then return "" end
+	title = util.htmlEntitiesToUtf8(title)
+	for __, pair in ipairs(QUOTE_PAIRS) do
+		-- Plain search, not a pattern: these quotes are multi-byte, so a character class
+		-- would match their bytes one at a time.
+		local open_from, open_to = title:find(pair[1], 1, true)
+		if open_from then
+			local close_from = title:find(pair[2], open_to + 1, true)
+			if close_from and close_from > open_to + 1 then
+				return title:sub(open_to + 1, close_from - 1)
+			end
+		end
+	end
+	return title
+end
+
+-- The same letters, in the same order, that a list gives its rows.
+local SHORTCUTS = require("ui/widget/menu").item_shortcuts
+
+--- Feeds a book points at, with the key that jumps to each.
+-- @param item table Book item
+-- @return table array of {href, label, value, key}, also keyed by kind in .by_kind
+local function buildRelated(item)
+	local related = { by_kind = {} }
+	local authors = 0
+	for __, rel in ipairs(item.related or {}) do
+		if rel.kind == "author" and rel.href then
+			authors = authors + 1
+		end
+	end
+	for __, rel in ipairs(item.related or {}) do
+		if rel.href then
+			local label, value
+			if rel.kind == "author" then
+				-- item.author names every author of the book at once, so it can stand for the
+				-- link only while there is a single author feed for it to stand for; a book of
+				-- two would otherwise show the same pair of names on both lines. It still has
+				-- to stand in when the server named nobody, or the line would be blank.
+				local named = authors == 1 and item.author or nil
+				value = named or relatedValue(rel.title)
+				if value == "" then
+					value = item.author or ""
+				end
+				label = _("Author")
+			elseif rel.kind == "series" then
+				label, value = _("Series"), relatedValue(rel.title)
+			else
+				label, value = _("Related"), relatedValue(rel.title)
+			end
+			-- Keys go in the order the lists hand them out, so the letters are the ones the
+			-- reader already meets in the catalog rather than a second scheme to learn.
+			local entry = {
+				href  = rel.href,
+				label = label,
+				value = value,
+				key   = SHORTCUTS[#related + 1],
+			}
+			if rel.kind and not related.by_kind[rel.kind] then
+				related.by_kind[rel.kind] = entry
+			end
+			table.insert(related, entry)
+		end
+	end
+	if not Device:hasKeyboard() then
+		for _, entry in ipairs(related) do
+			entry.key = nil
+		end
+	end
+	return related
+end
+
+--- Leave the book behind and open one of the feeds it points at.
+-- @param browser table OPDSBrowser instance
+-- @param href string Feed address
+-- @param title string Name for the feed, shown in the title bar and kept in the path
+local function jumpTo(browser, href, title)
+	if browser.book_info_dialog then
+		UIManager:close(browser.book_info_dialog)
+		browser.book_info_dialog = nil
+	end
+	-- Selecting a catalog names it before the fetch; a jump has to do the same, or the feed
+	-- arrives under the name of the catalog the book was found in.
+	browser.catalog_title = title or browser.catalog_title
+	NetworkMgr:runWhenConnected(function()
+		browser:updateCatalog(href)
+	end)
 end
 
 --- Build the book info dialog
@@ -309,11 +410,24 @@ function BookInfoDialog.build(browser, item)
 	-- Build info text parts
 	local info_parts = {}
 
+	-- Feeds the entry points at: everything by its author, the rest of its series, whatever
+	-- else the server relates it to. Each is shown as an info line rather than a button, so
+	-- that reaching Download on a 5-way stays as short as it was.
+	local related = buildRelated(item)
+
 	-- Author
-	if item.author then
+	if item.author and not related.by_kind.author then
 		table.insert(info_parts, {
 			label = _("Author"),
 			value = item.author,
+		})
+	end
+
+	for _, rel in ipairs(related) do
+		table.insert(info_parts, {
+			label = rel.label,
+			value = rel.value,
+			hint  = rel.key,
 		})
 	end
 
@@ -332,7 +446,8 @@ function BookInfoDialog.build(browser, item)
 	local info_text_parts = {}
 	for _, part in ipairs(info_parts) do
 		table.insert(info_text_parts, TextBoxWidget.PTF_BOLD_START .. part.label .. ":" .. TextBoxWidget.PTF_BOLD_END)
-		table.insert(info_text_parts, " " .. part.value .. "\n")
+		local hint = part.hint and T(" [%1]", part.hint) or ""
+		table.insert(info_text_parts, " " .. part.value .. hint .. "\n")
 	end
 
 	local info_widget = TextBoxWidget:new {
@@ -364,38 +479,24 @@ function BookInfoDialog.build(browser, item)
 		description_text = util.htmlToPlainTextIfHtml(item.content)
 	end
 
-	-- Calculate remaining height for description
-	local title_bar_height = Size.padding.large * 3 -- approximate
-	local header_height = cover_container and cover_height or info_widget:getSize().h
-	local button_height = Size.padding.large * 4 -- approximate for buttons
-	local description_height = dialog_height - title_bar_height - header_height - button_height - Size.padding.large * 4
-
-	local description_widget = ScrollableContainer:new {
-		dimen = Geom:new {
-			w = dialog_width - Size.padding.large * 2,
-			h = math.max(description_height, 100),
-		},
-		show_parent = browser,
-		VerticalGroup:new {
-			align = "left",
-			VerticalSpan:new { height = Size.padding.small },
-			TextBoxWidget:new {
-				text = TextBoxWidget.PTF_HEADER .. TextBoxWidget.PTF_BOLD_START .. _("Description") .. TextBoxWidget.PTF_BOLD_END,
-				width = dialog_width - Size.padding.large * 4,
-				face = Font:getFace("x_smallinfofont"),
-			},
-			VerticalSpan:new { height = Size.padding.small },
-			TextBoxWidget:new {
-				text = description_text,
-				width = dialog_width - Size.padding.large * 4,
-				face = Font:getFace("x_smallinfofont"),
-				alignment = "left",
-			},
-		},
-	}
-
 	-- Build buttons
 	local buttons_table = {}
+
+	-- Without a keyboard there is no key to hint at, so the related feeds get buttons instead.
+	-- They cost a device with a touchscreen nothing, since nothing is walked through to reach
+	-- them, and they go last so that Download stays where it was.
+	local related_buttons = {}
+	if not Device:hasKeyboard() then
+		for _, rel in ipairs(related) do
+			local text = rel.label .. ": " .. rel.value
+			table.insert(related_buttons, {
+				text = text,
+				callback = function()
+					jumpTo(browser, rel.href, text)
+				end,
+			})
+		end
+	end
 
 	-- Row 1: Stream buttons (if PSE available)
 	if pse_acquisition then
@@ -527,12 +628,51 @@ function BookInfoDialog.build(browser, item)
 		table.insert(buttons_table, options_row)
 	end
 
+	for _, button in ipairs(related_buttons) do
+		table.insert(buttons_table, { button })
+	end
+
 	-- Create button table widget
 	local button_table = ButtonTable:new {
 		width = dialog_width - Size.padding.large * 2,
 		buttons = buttons_table,
 		zero_sep = true,
 		show_parent = browser,
+	}
+
+	-- What is left of the dialog once the buttons have had their share. Ask the table how tall
+	-- it came out rather than guess at a row: the rows differ per book, and a book that points
+	-- at several feeds gets a row for each.
+	local title_bar_height = Size.padding.large * 3 -- approximate
+	-- The header is the cover and the info column side by side, and which of the two is taller
+	-- depends on the book: a book pointing at several feeds gets a line for each, and the column
+	-- outgrows the cover. Measure the row.
+	local header_height = header_content:getSize().h
+	local description_height = dialog_height - title_bar_height - header_height
+		- button_table:getSize().h - Size.padding.large * 4
+
+	local description_widget = ScrollableContainer:new {
+		dimen = Geom:new {
+			w = dialog_width - Size.padding.large * 2,
+			h = math.max(description_height, 100),
+		},
+		show_parent = browser,
+		VerticalGroup:new {
+			align = "left",
+			VerticalSpan:new { height = Size.padding.small },
+			TextBoxWidget:new {
+				text = TextBoxWidget.PTF_HEADER .. TextBoxWidget.PTF_BOLD_START .. _("Description") .. TextBoxWidget.PTF_BOLD_END,
+				width = dialog_width - Size.padding.large * 4,
+				face = Font:getFace("x_smallinfofont"),
+			},
+			VerticalSpan:new { height = Size.padding.small },
+			TextBoxWidget:new {
+				text = description_text,
+				width = dialog_width - Size.padding.large * 4,
+				face = Font:getFace("x_smallinfofont"),
+				alignment = "left",
+			},
+		},
 	}
 
 	-- Main content layout
@@ -616,6 +756,20 @@ function BookInfoDialog.build(browser, item)
 			},
 		},
 	}
+
+	-- The info lines carry the key that jumps to each feed, so no button is needed and the
+	-- walk to Download stays as short as it was.
+	for i, rel in ipairs(related) do
+		if rel.key then
+			local event = "JumpToRelated" .. i
+			browser.book_info_dialog.key_events = browser.book_info_dialog.key_events or {}
+			browser.book_info_dialog.key_events[event] = { { rel.key } }
+			browser.book_info_dialog["on" .. event] = function()
+				jumpTo(browser, rel.href, rel.label .. ": " .. rel.value)
+				return true
+			end
+		end
+	end
 
 	function browser.book_info_dialog:onTapClose(arg, ges)
 		if ges.pos:notIntersectWith(self.movable.dimen) then
