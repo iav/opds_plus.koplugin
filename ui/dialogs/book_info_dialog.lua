@@ -199,11 +199,21 @@ local SHORTCUTS = require("ui/widget/menu").item_shortcuts
 -- @return table array of {href, label, value, key}, also keyed by kind in .by_kind
 local function buildRelated(item)
 	local related = { by_kind = {} }
+	local authors = 0
+	for __, rel in ipairs(item.related or {}) do
+		if rel.kind == "author" and rel.href then
+			authors = authors + 1
+		end
+	end
 	for __, rel in ipairs(item.related or {}) do
 		if rel.href then
 			local label, value
 			if rel.kind == "author" then
-				label, value = _("Author"), item.author or relatedValue(rel.title)
+				-- item.author names every author of the book at once, so it can stand for the
+				-- link only while there is a single author feed for it to stand for; a book of
+				-- two would otherwise show the same pair of names on both lines.
+				local named = authors == 1 and item.author or nil
+				label, value = _("Author"), named or relatedValue(rel.title)
 			elseif rel.kind == "series" then
 				label, value = _("Series"), relatedValue(rel.title)
 			else
