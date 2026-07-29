@@ -21,12 +21,31 @@ end
 -- when it says nothing either, the caller falls back to the title the server supplies.
 -- @param link table Link element from an OPDS entry
 -- @return string|nil "author", "series", or nil
+local KIND_SEGMENTS = {
+	author        = "author",
+	authors       = "author",
+	authorsindex  = "author",
+	series        = "series",
+	sequence      = "series",
+	sequences     = "series",
+	sequencebooks = "series",
+}
+
 function CatalogUtils.relatedKind(link)
-	local href = type(link.href) == "string" and link.href:lower() or ""
-	if href:find("author", 1, true) then
-		return "author"
-	elseif href:find("sequence", 1, true) or href:find("series", 1, true) then
-		return "series"
+	if type(link.href) ~= "string" then
+		return nil
+	end
+	-- Only the path says anything: a host may be named books.authorhouse.com and a query may
+	-- sort by author without either feed being one. Whole segments, too, for the same reason.
+	local path = link.href:lower()
+		:gsub("^%a[%w+.-]*:", "") -- scheme
+		:gsub("^//[^/]*", "")     -- host
+		:gsub("[?#].*", "")       -- query and fragment
+	for segment in path:gmatch("[^/]+") do
+		local kind = KIND_SEGMENTS[segment]
+		if kind then
+			return kind
+		end
 	end
 	return nil
 end
