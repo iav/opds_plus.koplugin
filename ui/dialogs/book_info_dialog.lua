@@ -639,7 +639,10 @@ function BookInfoDialog.build(browser, item)
 	-- it came out rather than guess at a row: the rows differ per book, and a book that points
 	-- at several feeds gets a row for each.
 	local title_bar_height = Size.padding.large * 3 -- approximate
-	local header_height = cover_container and cover_height or info_widget:getSize().h
+	-- The header is the cover and the info column side by side, and which of the two is taller
+	-- depends on the book: a book pointing at several feeds gets a line for each, and the column
+	-- outgrows the cover. Measure the row.
+	local header_height = header_content:getSize().h
 	local description_height = dialog_height - title_bar_height - header_height
 		- button_table:getSize().h - Size.padding.large * 4
 
