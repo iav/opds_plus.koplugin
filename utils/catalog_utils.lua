@@ -7,7 +7,13 @@ local CatalogUtils = {}
 -- @param link table Link element from an OPDS entry
 -- @return boolean
 function CatalogUtils.isFeedLink(link)
-	return type(link.type) == "string" and link.type:find("application/atom%+xml") == 1
+	if type(link.type) ~= "string" then
+		return false
+	end
+	-- A media type is case-insensitive and may be padded, so a server writing Application/Atom+XML
+	-- means the same thing and its feeds have to be recognised all the same.
+	local media_type = link.type:lower():gsub("^%s+", "")
+	return media_type:find("application/atom%+xml") == 1
 end
 
 --- What a related feed holds, as far as the href lets us tell.
