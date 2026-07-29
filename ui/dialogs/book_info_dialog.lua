@@ -191,13 +191,14 @@ local function relatedValue(title)
 	return title
 end
 
+-- The same letters, in the same order, that a list gives its rows.
+local SHORTCUTS = require("ui/widget/menu").item_shortcuts
+
 --- Feeds a book points at, with the key that jumps to each.
 -- @param item table Book item
 -- @return table array of {href, label, value, key}, also keyed by kind in .by_kind
 local function buildRelated(item)
 	local related = { by_kind = {} }
-	local keys = { author = "A", series = "S" }
-	local spare = { "R", "T", "Y", "U" }
 	for __, rel in ipairs(item.related or {}) do
 		if rel.href then
 			local label, value
@@ -208,11 +209,14 @@ local function buildRelated(item)
 			else
 				label, value = _("Related"), relatedValue(rel.title)
 			end
-			local key = rel.kind and keys[rel.kind] or nil
-			if not key or related.by_kind[rel.kind] then
-				key = table.remove(spare, 1)
-			end
-			local entry = { href = rel.href, label = label, value = value, key = key }
+			-- Keys go in the order the lists hand them out, so the letters are the ones the
+			-- reader already meets in the catalog rather than a second scheme to learn.
+			local entry = {
+				href  = rel.href,
+				label = label,
+				value = value,
+				key   = SHORTCUTS[#related + 1],
+			}
 			if rel.kind and not related.by_kind[rel.kind] then
 				related.by_kind[rel.kind] = entry
 			end
