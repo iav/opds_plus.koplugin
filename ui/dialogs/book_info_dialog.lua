@@ -474,36 +474,6 @@ function BookInfoDialog.build(browser, item)
 		description_text = util.htmlToPlainTextIfHtml(item.content)
 	end
 
-	-- Calculate remaining height for description
-	local title_bar_height = Size.padding.large * 3 -- approximate
-	local header_height = cover_container and cover_height or info_widget:getSize().h
-	local button_height = Size.padding.large * 4 -- approximate for buttons
-	local description_height = dialog_height - title_bar_height - header_height - button_height - Size.padding.large * 4
-
-	local description_widget = ScrollableContainer:new {
-		dimen = Geom:new {
-			w = dialog_width - Size.padding.large * 2,
-			h = math.max(description_height, 100),
-		},
-		show_parent = browser,
-		VerticalGroup:new {
-			align = "left",
-			VerticalSpan:new { height = Size.padding.small },
-			TextBoxWidget:new {
-				text = TextBoxWidget.PTF_HEADER .. TextBoxWidget.PTF_BOLD_START .. _("Description") .. TextBoxWidget.PTF_BOLD_END,
-				width = dialog_width - Size.padding.large * 4,
-				face = Font:getFace("x_smallinfofont"),
-			},
-			VerticalSpan:new { height = Size.padding.small },
-			TextBoxWidget:new {
-				text = description_text,
-				width = dialog_width - Size.padding.large * 4,
-				face = Font:getFace("x_smallinfofont"),
-				alignment = "left",
-			},
-		},
-	}
-
 	-- Build buttons
 	local buttons_table = {}
 
@@ -663,6 +633,38 @@ function BookInfoDialog.build(browser, item)
 		buttons = buttons_table,
 		zero_sep = true,
 		show_parent = browser,
+	}
+
+	-- What is left of the dialog once the buttons have had their share. Ask the table how tall
+	-- it came out rather than guess at a row: the rows differ per book, and a book that points
+	-- at several feeds gets a row for each.
+	local title_bar_height = Size.padding.large * 3 -- approximate
+	local header_height = cover_container and cover_height or info_widget:getSize().h
+	local description_height = dialog_height - title_bar_height - header_height
+		- button_table:getSize().h - Size.padding.large * 4
+
+	local description_widget = ScrollableContainer:new {
+		dimen = Geom:new {
+			w = dialog_width - Size.padding.large * 2,
+			h = math.max(description_height, 100),
+		},
+		show_parent = browser,
+		VerticalGroup:new {
+			align = "left",
+			VerticalSpan:new { height = Size.padding.small },
+			TextBoxWidget:new {
+				text = TextBoxWidget.PTF_HEADER .. TextBoxWidget.PTF_BOLD_START .. _("Description") .. TextBoxWidget.PTF_BOLD_END,
+				width = dialog_width - Size.padding.large * 4,
+				face = Font:getFace("x_smallinfofont"),
+			},
+			VerticalSpan:new { height = Size.padding.small },
+			TextBoxWidget:new {
+				text = description_text,
+				width = dialog_width - Size.padding.large * 4,
+				face = Font:getFace("x_smallinfofont"),
+				alignment = "left",
+			},
+		},
 	}
 
 	-- Main content layout
