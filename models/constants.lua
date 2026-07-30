@@ -46,8 +46,8 @@ local Constants = {
 	TIMEOUTS = {
 		DEFAULT = 10,
 		MAX_TIME = 30,
-		IMAGE_LOAD = 10,
-		IMAGE_MAX_TIME = 30,
+		IMAGE_LOAD = 4,
+		IMAGE_MAX_TIME = 8,
 	},
 
 	-- Sync Settings
@@ -66,7 +66,10 @@ local Constants = {
 		NOTIFICATION_TIMEOUT = 1,
 		DUPLICATE_NOTIFICATION_TIMEOUT = 3,
 		DOWNLOAD_SCHEDULE_DELAY = 1,
-		IMAGE_BATCH_DELAY = 0.2,
+		-- Must outlast the repaint that follows each cover: while a scheduled task is already due,
+		-- UIManager loops over tasks and never reaches the input poll. Cells repaint themselves
+		-- rather than the whole browser, so this only has to cover one cell.
+		IMAGE_BATCH_DELAY = 0.05,
 	},
 
 	-- Cache Configuration

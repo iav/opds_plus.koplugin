@@ -53,11 +53,15 @@ function Batch:loadImages(urls)
                     self.callback(url, cached.content)
                 end
 
+                -- Schedule rather than recurse: a page of cached covers would otherwise decode,
+                -- render and repaint in one go, with no chance for a keypress to be read. The
+                -- delay has to outlast that repaint, or the task is due again before the loop
+                -- reaches the input poll -- same reason as the uncached path below.
                 if #pending_urls > 0 then
                     UIManager:scheduleIn(Constants.UI_TIMING.IMAGE_BATCH_DELAY, run_image)
-                else
-                    self.loading = false
+                    return
                 end
+                self.loading = false
                 return
             end
 
@@ -92,7 +96,7 @@ function Batch:loadImages(urls)
             end
         else
             Debug.error("ImageLoader:", "Failed to download cover:", content or "unknown error")
-            if stale_content and self.callback then
+            if self.callback then
                 self.callback(url, stale_content)
             end
         end
