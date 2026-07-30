@@ -22,6 +22,7 @@ function SettingsMenu.create(plugin)
 					sub_item_table = {
 						{
 							text = _("Prefer Large Covers"),
+							keep_menu_open = true,
 							checked_func = function()
 								return plugin:getSetting("prefer_large_covers") == true
 							end,
@@ -38,6 +39,7 @@ function SettingsMenu.create(plugin)
 						},
 						{
 							text = _("Enable Cover Cache"),
+							keep_menu_open = true,
 							checked_func = function()
 								return plugin:getSetting("cover_cache_enabled") ~= false
 							end,
@@ -57,12 +59,14 @@ function SettingsMenu.create(plugin)
 							sub_item_table = {
 								{
 									text = _("Cache Size (MB)"),
+									keep_menu_open = true,
 									callback = function()
 										plugin:showCoverCacheSizeDialog()
 									end,
 								},
 								{
 									text = _("Cache TTL (minutes)"),
+									keep_menu_open = true,
 									callback = function()
 										plugin:showCoverCacheTTLDialog()
 									end,
@@ -82,6 +86,7 @@ function SettingsMenu.create(plugin)
 					sub_item_table = {
 						{
 							text = _("List View"),
+							keep_menu_open = true,
 							checked_func = function()
 								local mode = plugin.settings.display_mode
 								return mode == "list" or mode == nil
@@ -98,6 +103,7 @@ function SettingsMenu.create(plugin)
 						},
 						{
 							text = _("Grid View"),
+							keep_menu_open = true,
 							checked_func = function()
 								return plugin.settings.display_mode == "grid"
 							end,
@@ -118,6 +124,7 @@ function SettingsMenu.create(plugin)
 					sub_item_table = {
 						{
 							text = _("Cover Size"),
+							keep_menu_open = true,
 							callback = function()
 								plugin:showCoverSizeMenu()
 							end,
@@ -129,12 +136,14 @@ function SettingsMenu.create(plugin)
 					sub_item_table = {
 						{
 							text = _("Grid Layout"),
+							keep_menu_open = true,
 							callback = function()
 								plugin:showGridLayoutMenu()
 							end,
 						},
 						{
 							text = _("Grid Borders"),
+							keep_menu_open = true,
 							callback = function()
 								plugin:showGridBorderMenu()
 							end,
@@ -146,6 +155,7 @@ function SettingsMenu.create(plugin)
 					sub_item_table = {
 						{
 							text = _("Use Same Font for All"),
+							keep_menu_open = true,
 							checked_func = function()
 								return plugin:getSetting("use_same_font")
 							end,
@@ -165,18 +175,21 @@ function SettingsMenu.create(plugin)
 							sub_item_table = {
 								{
 									text = _("Title Font"),
+									keep_menu_open = true,
 									callback = function()
 										plugin:showFontSelectionMenu("title_font", _("Title Font"))
 									end,
 								},
 								{
 									text = _("Title Size"),
+									keep_menu_open = true,
 									callback = function()
 										plugin:showSizeSelectionMenu("title_size", _("Title Font Size"), 12, 24, 16)
 									end,
 								},
 								{
 									text = _("Title Bold"),
+									keep_menu_open = true,
 									checked_func = function()
 										return plugin:getSetting("title_bold")
 									end,
@@ -198,6 +211,7 @@ function SettingsMenu.create(plugin)
 							sub_item_table = {
 								{
 									text = _("Info Font"),
+									keep_menu_open = true,
 									enabled_func = function()
 										return not plugin:getSetting("use_same_font")
 									end,
@@ -207,6 +221,7 @@ function SettingsMenu.create(plugin)
 								},
 								{
 									text = _("Info Size"),
+									keep_menu_open = true,
 									callback = function()
 										plugin:showSizeSelectionMenu("info_size", _("Information Font Size"), 10,
 											20, 14)
@@ -214,6 +229,7 @@ function SettingsMenu.create(plugin)
 								},
 								{
 									text = _("Info Bold"),
+									keep_menu_open = true,
 									checked_func = function()
 										return plugin:getSetting("info_bold")
 									end,
@@ -233,6 +249,7 @@ function SettingsMenu.create(plugin)
 									sub_item_table = {
 										{
 											text = _("Dark Gray (Subtle)"),
+											keep_menu_open = true,
 											checked_func = function()
 												return plugin:getSetting("info_color") == "dark_gray"
 											end,
@@ -246,6 +263,7 @@ function SettingsMenu.create(plugin)
 										},
 										{
 											text = _("Black (High Contrast)"),
+											keep_menu_open = true,
 											checked_func = function()
 												return plugin:getSetting("info_color") == "black"
 											end,
@@ -268,6 +286,7 @@ function SettingsMenu.create(plugin)
 					sub_item_table = {
 						{
 							text = _("Debug Mode"),
+							keep_menu_open = true,
 							checked_func = function()
 								return plugin.settings.debug_mode == true
 							end,
