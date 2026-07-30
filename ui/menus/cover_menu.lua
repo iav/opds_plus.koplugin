@@ -2,6 +2,7 @@ local Menu = require("ui/widget/menu")
 local OPDSListMenu = require("ui.menus.list_menu")
 local OPDSGridMenu = require("ui.menus.grid_menu")
 local UIManager = require("ui/uimanager")
+local CoverLoader = require("services.cover_loader")
 local Debug = require("utils.debug")
 local StateManager = require("core.state_manager")
 
@@ -20,17 +21,7 @@ function OPDSCoverMenu:_debugLog(...)
 end
 
 function OPDSCoverMenu:updateItems(select_number)
-    -- Cancel any scheduled cover loading from previous page
-    if self._scheduled_cover_load then
-        UIManager:unschedule(self._scheduled_cover_load)
-        self._scheduled_cover_load = nil
-    end
-
-    -- Cancel any ongoing image loading
-    if self.halt_image_loading then
-        self.halt_image_loading()
-        self.halt_image_loading = nil
-    end
+    CoverLoader.stopLoading(self)
 
     -- Check if any items have cover URLs
     local has_covers = false

@@ -127,6 +127,7 @@ function OPDSListMenuItem:init()
             width = self.cover_width,
             height = self.cover_height,
             alpha = true,
+            image_disposable = false, -- the entry owns it, CoverLoader.cleanup frees it
         }
     elseif self.entry.cover_url and self.entry.lazy_load_cover then
         inner_cover_widget = UIUtils.createPlaceholderCover(self.cover_width, self.cover_height, "loading")
@@ -297,6 +298,9 @@ end
 function OPDSListMenuItem:onFocus()
     self._is_focused = true
     self._underline.background = Blitbuffer.COLOR_BLACK
+    if self.menu then
+        CoverLoader.defer(self.menu)
+    end
     return true
 end
 
@@ -307,11 +311,26 @@ function OPDSListMenuItem:onUnfocus()
 end
 
 function OPDSListMenuItem:update()
-    -- Re-initialize with updated entry data
+    -- init() replaces dimen, and only paintTo knows where the item sits.
+    local drawn_at = self.dimen and self.dimen.x and { x = self.dimen.x, y = self.dimen.y }
     self:init()
-    UIManager:setDirty(self.show_parent, function()
-        return "ui", self.dimen
-    end)
+    -- Under a dialog this would redraw the catalog and the dialog over it, unseen; the entry
+    -- keeps the cover for the next time the page is built.
+    if UIManager:getTopmostVisibleWidget() ~= self.show_parent then
+        return
+    end
+    if not drawn_at then
+        -- Never painted, so there is nothing to paint over: let the page draw it.
+        UIManager:setDirty(self.show_parent, function()
+            return "ui", self.dimen
+        end)
+        return
+    end
+    -- Paint this item alone: setDirty on the browser walks its whole tree, which costs as much
+    -- as a page turn for one cover. Same idiom as Button and the virtual keyboard.
+    self.dimen.x, self.dimen.y = drawn_at.x, drawn_at.y
+    UIManager:widgetRepaint(self, drawn_at.x, drawn_at.y)
+    UIManager:setDirty(nil, "ui", self.dimen)
 end
 
 -- Handle tap events - delegate to parent menu
@@ -500,6 +519,8 @@ function OPDSListMenu:updateItems(select_number)
         local entry = self.item_table[entry_idx]
 
         if entry then
+            CoverLoader.useCoverForSize(entry, self.cover_width, self.cover_height)
+
             local item_width = self.content_width or Screen:getWidth()
             local item_height = self.item_height
 
@@ -537,6 +558,9 @@ function OPDSListMenu:updateItems(select_number)
         end
     end
 
+    -- Before the focus moves: its handlers defer the load, and defer reads _cover_queue.
+    self._cover_queue = self._items_to_update
+
     -- Update page info
     self:updatePageInfo(select_number)
 
@@ -553,15 +577,7 @@ function OPDSListMenu:updateItems(select_number)
     -- Schedule cover loading
     if #self._items_to_update > 0 then
         self:_debugLog("Scheduling cover loading for", #self._items_to_update, "items")
-
-        -- Store the scheduled function so it can be cancelled if needed
-        self._scheduled_cover_load = function()
-            if self._loadVisibleCovers then
-                self:_loadVisibleCovers()
-            end
-        end
-
-        UIManager:scheduleIn(1, self._scheduled_cover_load)
+        CoverLoader.scheduleLoad(self, 1)
     end
 end
 
