@@ -804,6 +804,9 @@ function OPDSGridMenu:updateItems(select_number)
     if #self._items_to_update > 0 then
         self:_debugLog("Scheduling cover loading for", #self._items_to_update, "items")
         CoverLoader.scheduleLoad(self, 1)
+    else
+        -- A page that loads nothing would otherwise warm nothing either.
+        CoverLoader.schedulePrefetch(self, 1)
     end
 end
 

@@ -97,6 +97,12 @@ function OPDSBrowser:onBack()
     return self:onClose()
 end
 
+-- Every page turn Menu offers -- keys, chevrons, the goto dialog -- arrives here.
+function OPDSBrowser:onGotoPage(page)
+    CoverLoader.noteNavigation(self, page)
+    return OPDSCoverMenu.onGotoPage(self, page)
+end
+
 function OPDSBrowser:_debugLog(...)
     Debug.log("Browser:", ...)
 end
@@ -147,7 +153,7 @@ OPDSBrowser.onKeyRepeat = OPDSBrowser.onKeyPress
 -- Nothing else frees the covers of the catalog being left: the widgets do not own them.
 function OPDSBrowser:switchItemTable(new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
     if new_item_table and new_item_table ~= self.item_table then
-        CoverLoader.freeCovers(self.item_table)
+        CoverLoader.leaveCatalog(self)
     end
     return OPDSCoverMenu.switchItemTable(self, new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
 end
@@ -426,7 +432,7 @@ end
 -- init() rebuilds the browser without going through switchItemTable, so the covers of the
 -- catalog being left would stay allocated in CoverLoader.
 function OPDSBrowser:returnToRoot()
-    CoverLoader.freeCovers(self.item_table)
+    CoverLoader.leaveCatalog(self)
     self:init()
 end
 

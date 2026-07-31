@@ -4,6 +4,7 @@
 
 local RenderImage = require("ui/renderimage")
 
+local Constants = require("models.constants")
 local ImageLoader = require("services.image_loader")
 local Debug = require("utils.debug")
 
@@ -13,6 +14,8 @@ local CoverLoader = {}
 -- ever drawn; the device has no swap. Dropping the oldest costs a re-render from the disk cache.
 -- Well over two pages in either view: a cover still on screen is painted from its widget.
 local MAX_RENDERED_COVERS = 40
+
+local PREFETCH_CHECK_SECONDS = 0.5
 local rendered = {} -- oldest first, {entry, key}
 
 local function sizeKey(cover_width, cover_height)
@@ -189,6 +192,39 @@ function CoverLoader.stopLoading(menu)
 	if menu._scheduled_cover_load then
 		UIManager:unschedule(menu._scheduled_cover_load)
 	end
+	CoverLoader.stopPrefetch(menu)
+end
+
+--- Note which way the reader is going, from the page turn itself.
+-- Page numbers are only comparable within one layout, and every layout change renumbers them,
+-- so the turn is where the direction has to be read.
+-- @param menu table Menu instance
+-- @param page number Page being turned to
+function CoverLoader.noteNavigation(menu, page)
+	if menu.page and page ~= menu.page then
+		menu._cover_page_direction = page > menu.page and 1 or -1
+	end
+end
+
+--- Forget a catalog's covers and the way through it, before another takes its place.
+-- @param menu table Menu instance
+function CoverLoader.leaveCatalog(menu)
+	CoverLoader.freeCovers(menu.item_table)
+	menu._cover_page_direction = nil
+end
+
+--- Drop a prefetch: the reader has moved, so it may be warming the wrong page.
+-- @param menu table Menu instance
+function CoverLoader.stopPrefetch(menu)
+	local UIManager = require("ui/uimanager")
+
+	if menu._scheduled_cover_prefetch then
+		UIManager:unschedule(menu._scheduled_cover_prefetch)
+	end
+	if menu.halt_cover_prefetch then
+		menu.halt_cover_prefetch()
+		menu.halt_cover_prefetch = nil
+	end
 end
 
 --- Point the entry at its cover for this view's size, keeping the other view's rendering.
@@ -239,6 +275,9 @@ function CoverLoader.loadVisibleCovers(menu, debug_log)
 	local urls, items_by_url = CoverLoader.extractUniqueUrls(menu._items_to_update)
 
 	if #urls == 0 then
+		-- Nothing here to fetch, but the neighbour still wants warming.
+		menu._items_to_update = {}
+		CoverLoader.schedulePrefetch(menu)
 		return nil
 	end
 
@@ -264,7 +303,7 @@ function CoverLoader.loadVisibleCovers(menu, debug_log)
 	)
 
 	-- Load covers asynchronously
-	local _, halt = ImageLoader:loadImages(
+	local batch, halt = ImageLoader:loadImages(
 		urls,
 		render_callback,
 		username,
@@ -273,11 +312,85 @@ function CoverLoader.loadVisibleCovers(menu, debug_log)
 		cache_max_mb,
 		cache_ttl_minutes
 	)
+	menu._cover_batch = batch
+	CoverLoader.schedulePrefetch(menu)
 
 	-- Clear the pending items
 	menu._items_to_update = {}
 
 	return halt
+end
+
+--- Ask for a prefetch as soon as the page on screen has all of its own covers.
+-- @param menu table Menu instance
+-- @param delay number|nil Seconds to wait first (default PREFETCH_CHECK_SECONDS)
+function CoverLoader.schedulePrefetch(menu, delay)
+	local UIManager = require("ui/uimanager")
+
+	CoverLoader.stopPrefetch(menu)
+	if not menu._scheduled_cover_prefetch then
+		menu._scheduled_cover_prefetch = function()
+			CoverLoader.prefetchAdjacentPage(menu)
+		end
+	end
+	UIManager:scheduleIn(delay or PREFETCH_CHECK_SECONDS, menu._scheduled_cover_prefetch)
+end
+
+--- Warm the covers of the page the reader is walking towards, once this one has all of its own.
+-- Only the cache is filled: nothing is decoded or drawn until the page is turned to.
+-- @param menu table Menu instance
+function CoverLoader.prefetchAdjacentPage(menu)
+	local CoverCache = require("services.cover_cache")
+
+	if not (menu.item_table and menu.page and menu.perpage) then
+		return
+	end
+	-- The page on screen comes first: warming the next one while it is still arriving would put
+	-- two fetches on the wire and hand the reader their own page last.
+	if menu._cover_batch and menu._cover_batch.loading then
+		CoverLoader.schedulePrefetch(menu)
+		return
+	end
+	local settings = menu.settings
+	if settings and settings.cover_cache_enabled == false then
+		return -- nothing to warm: the cache is where a prefetched cover would live
+	end
+
+	local direction = menu._cover_page_direction or 1
+	local first = (menu.page - 1 + direction) * menu.perpage + 1
+	if first < 1 then
+		return
+	end
+
+	local ttl_seconds = ((settings and settings.cover_cache_ttl_minutes)
+		or Constants.COVER_CACHE.DEFAULT_TTL_MINUTES) * 60
+	local urls, seen = {}, {}
+	for i = first, math.min(first + menu.perpage - 1, #menu.item_table) do
+		local entry = menu.item_table[i]
+		local url = entry and entry.cover_url
+		if url and not seen[url] and not entry.cover_bb and not entry.cover_failed then
+			local cached = CoverCache.get(url, ttl_seconds)
+			if not (cached and not cached.stale) then
+				seen[url] = true
+				table.insert(urls, url)
+			end
+		end
+	end
+	if #urls == 0 then
+		return
+	end
+
+	Debug.log("CoverLoader:", "Prefetching", #urls, "covers for page", menu.page + direction)
+	local _, halt = ImageLoader:loadImages(
+		urls,
+		function() end, -- the bytes are wanted in the cache, not on the screen
+		menu.root_catalog_username,
+		menu.root_catalog_password,
+		true,
+		settings and settings.cover_cache_max_mb,
+		settings and settings.cover_cache_ttl_minutes
+	)
+	menu.halt_cover_prefetch = halt
 end
 
 --- Clean up cover loading and free resources
@@ -288,6 +401,7 @@ function CoverLoader.cleanup(menu)
 		menu.halt_image_loading()
 		menu.halt_image_loading = nil
 	end
+	CoverLoader.stopPrefetch(menu)
 
 	CoverLoader.freeCovers(menu.item_table)
 end
@@ -334,6 +448,9 @@ function CoverLoader.defer(menu, delay)
 	end
 	if #menu._items_to_update > 0 then
 		CoverLoader.scheduleLoad(menu, delay or 1)
+	elseif menu._cover_queue then
+		-- stopLoading above dropped the warming too; without this, one keypress ends it.
+		CoverLoader.schedulePrefetch(menu, delay or 1)
 	end
 end
 
