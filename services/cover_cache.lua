@@ -37,13 +37,18 @@ local function readFile(path)
 	return data
 end
 
+-- A full disk often reports itself only on the flush, so the close matters as much as the write.
 local function writeFile(path, content)
 	local f = io.open(path, "wb")
 	if not f then
 		return false
 	end
-	f:write(content)
-	f:close()
+	local written = f:write(content)
+	local closed = f:close()
+	if not written or not closed then
+		os.remove(path)
+		return false
+	end
 	return true
 end
 
@@ -166,11 +171,19 @@ function CoverCache.put(url, content, max_bytes)
 		return false
 	end
 
-	local ok = writeFile(cachePath(url), content)
-	if ok and max_bytes and max_bytes > 0 then
+	-- Rename onto the entry, so a write cut short leaves a scratch file and never half a cover.
+	local scratch = cachePath(url) .. ".tmp"
+	if not writeFile(scratch, content) then
+		return false
+	end
+	if not os.rename(scratch, cachePath(url)) then
+		os.remove(scratch)
+		return false
+	end
+	if max_bytes and max_bytes > 0 then
 		pruneToMaxBytes(max_bytes)
 	end
-	return ok
+	return true
 end
 
 function CoverCache.clear()
@@ -179,7 +192,7 @@ function CoverCache.clear()
 	end
 
 	for name in lfs.dir(CACHE_DIR) do
-		if name ~= "." and name ~= ".." and name:sub(-4) == ".img" then
+		if name ~= "." and name ~= ".." and (name:sub(-4) == ".img" or name:sub(-4) == ".tmp") then
 			os.remove(CACHE_DIR .. "/" .. name)
 		end
 	end
